@@ -1,0 +1,45 @@
+# Core FastAPI and ASGI server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# File uploads
+python-multipart==0.0.6
+aiofiles==23.2.0
+
+# Authentication and security
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+python-decouple==3.8
+PyJWT==2.8.0
+
+# Database
+# sqlite3 is built-in with Python – no need to install
+
+# AI/ML and chatbot
+groq==0.4.1
+
+# Data validation and modeling
+pydantic[email]==2.5.0
+
+# HTTP requests and scraping
+requests==2.31.0
+aiohttp==3.9.1
+beautifulsoup4==4.12.2
+lxml==4.9.3
+httpx==0.25.2
+
+# Background tasks and messaging
+redis==5.0.1
+celery==5.3.4
+
+# Deployment (for production)
+gunicorn==21.2.0
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+
+# Code formatting and linting
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
