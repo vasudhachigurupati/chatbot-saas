@@ -3,740 +3,1704 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Chatbot SaaS Platform</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        
-        .container {
-            background: white;
-            padding: 2.5rem;
-            border-radius: 20px;
-            box-shadow: 0 25px 50px rgba(0,0,0,0.15);
-            width: 100%;
-            max-width: 500px;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .container::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-        
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 2rem;
-            font-size: 2rem;
-            font-weight: 700;
-        }
-        
-        h2 {
-            color: #333;
-            margin-bottom: 1.5rem;
-            font-size: 1.5rem;
-            font-weight: 600;
-            text-align: center;
-        }
-        
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: #555;
-            font-weight: 600;
-            font-size: 0.9rem;
-        }
-        
-        input, textarea, select {
-            width: 100%;
-            padding: 1rem;
-            border: 2px solid #e1e5e9;
-            border-radius: 12px;
-            font-size: 1rem;
-            transition: all 0.3s ease;
-            background: #fafafa;
-        }
-        
-        input:focus, textarea:focus, select:focus {
-            outline: none;
-            border-color: #667eea;
-            background: white;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        
-        button {
-            width: 100%;
-            padding: 1rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        button::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-            transition: left 0.5s;
-        }
-        
-        button:hover::before {
-            left: 100%;
-        }
-        
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
-        }
-        
-        button:active {
-            transform: translateY(0);
-        }
-        
-        button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .tab-buttons {
-            display: flex;
-            margin-bottom: 2rem;
-            background: #f8f9fa;
-            border-radius: 12px;
-            padding: 0.5rem;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .tab-button {
-            flex: 1;
-            padding: 1rem;
-            background: transparent;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-weight: 600;
-            color: #666;
-            font-size: 0.9rem;
-        }
-        
-        .tab-button.active {
-            background: white;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            color: #667eea;
-            transform: translateY(-1px);
-        }
-        
-        .tab-button:hover:not(.active) {
-            background: rgba(102, 126, 234, 0.1);
-            color: #667eea;
-        }
-        
-        .tab-content {
-            display: none;
-            animation: fadeIn 0.3s ease;
-        }
-        
-        .tab-content.active {
-            display: block;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .result {
-            margin-top: 1rem;
-            padding: 1rem;
-            border-radius: 10px;
-            background: #f8f9fa;
-            border-left: 4px solid #667eea;
-            animation: slideIn 0.3s ease;
-        }
-        
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateX(-10px); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-        
-        .error {
-            border-left-color: #e74c3c;
-            background: #fdf2f2;
-            color: #c53030;
-        }
-        
-        .success {
-            border-left-color: #48bb78;
-            background: #f0fff4;
-            color: #2f855a;
-        }
-        
-        .chat-container {
-            border: 2px solid #e1e5e9;
-            border-radius: 12px;
-            height: 300px;
-            overflow-y: auto;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            background: #fafafa;
-        }
-        
-        .message {
-            margin-bottom: 1rem;
-            padding: 0.75rem;
-            border-radius: 12px;
-            animation: messageSlide 0.3s ease;
-        }
-        
-        @keyframes messageSlide {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .user-message {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            margin-left: 2rem;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-        }
-        
-        .bot-message {
-            background: white;
-            color: #333;
-            margin-right: 2rem;
-            border: 1px solid #e1e5e9;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        
-        .login-highlight {
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(72, 187, 120, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0); }
-        }
-        
-        .status-indicator {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-        
-        .status-logged-out {
-            background: #fdf2f2;
-            color: #c53030;
-            border: 1px solid #feb2b2;
-        }
-        
-        .status-logged-in {
-            background: #f0fff4;
-            color: #2f855a;
-            border: 1px solid #9ae6b4;
-        }
-        
-        .refresh-btn {
-            width: auto;
-            padding: 0.5rem 1rem;
-            margin-left: 0.5rem;
-            font-size: 0.9rem;
-            text-transform: none;
-            letter-spacing: normal;
-        }
-        
-        @media (max-width: 480px) {
-            .container {
-                padding: 1.5rem;
-                margin: 10px;
-            }
-            
-            .tab-buttons {
-                flex-wrap: wrap;
-            }
-            
-            .tab-button {
-                flex: 1 1 45%;
-                margin: 0.25rem;
-            }
-        }
-    </style>
+    <title>ChatBot SaaS - AI-Powered Website Chatbots</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="./src/styles/main.css">
+    
 </head>
 <body>
-    <div class="container">
-        <div class="status-indicator" id="status-indicator">
-            🔒 Not Logged In
-        </div>
-        
-        <h1>🤖 Chatbot SaaS Platform</h1>
-        
-        <div class="tab-buttons">
-            <button class="tab-button active" onclick="showTab('register')">Register</button>
-            <button class="tab-button" onclick="showTab('login')">Login</button>
-            <button class="tab-button" onclick="showTab('chatbot')">Create Bot</button>
-            <button class="tab-button" onclick="showTab('chat')">Test Chat</button>
-        </div>
-        
-        <!-- Register Tab -->
-        <div id="register" class="tab-content active">
-            <h2>Create Account</h2>
-            <form onsubmit="register(event)">
-                <div class="form-group">
-                    <label>📧 Email Address:</label>
-                    <input type="email" id="reg-email" required placeholder="Enter your email">
-                </div>
-                <div class="form-group">
-                    <label>🔒 Password:</label>
-                    <input type="password" id="reg-password" required placeholder="Create a secure password">
-                </div>
-                <div class="form-group">
-                    <label>🏢 Company Name:</label>
-                    <input type="text" id="reg-company" required placeholder="Your company name">
-                </div>
-                <div class="form-group">
-                    <label>📊 Plan:</label>
-                    <select id="reg-plan">
-                        <option value="free">Free Plan</option>
-                        <option value="premium">Premium Plan</option>
-                        <option value="enterprise">Enterprise Plan</option>
-                    </select>
-                </div>
-                <button type="submit">Create Account</button>
-            </form>
-            <div id="register-result"></div>
-        </div>
-        
-        <!-- Login Tab -->
-        <div id="login" class="tab-content">
-            <h2>Welcome Back!</h2>
-            <p style="text-align: center; color: #666; margin-bottom: 2rem;">Sign in to access your chatbots</p>
-            <form onsubmit="login(event)">
-                <div class="form-group">
-                    <label>📧 Email Address:</label>
-                    <input type="email" id="login-email" required placeholder="Enter your email" 
-                           style="border: 2px solid #48bb78;">
-                </div>
-                <div class="form-group">
-                    <label>🔒 Password:</label>
-                    <input type="password" id="login-password" required placeholder="Enter your password"
-                           style="border: 2px solid #48bb78;">
-                </div>
-                <button type="submit" class="login-highlight" style="font-size: 1.2rem; padding: 1.2rem;">
-                    🚀 Sign In Now
-                </button>
-            </form>
-            <div id="login-result"></div>
-            <p style="text-align: center; margin-top: 1rem; color: #666; font-size: 0.9rem;">
-                Don't have an account? <a href="#" onclick="showTab('register')" style="color: #667eea; text-decoration: none; font-weight: 600;">Create one here</a>
-            </p>
-        </div>
-        
-        <!-- Create Chatbot Tab -->
-        <div id="chatbot" class="tab-content">
-            <h2>Create New Chatbot</h2>
-            <form onsubmit="createChatbot(event)">
-                <div class="form-group">
-                    <label>🤖 Bot Name:</label>
-                    <input type="text" id="bot-name" required placeholder="Give your bot a name">
-                </div>
-                <div class="form-group">
-                    <label>🌐 Website URL:</label>
-                    <input type="url" id="bot-website" placeholder="https://example.com" required>
-                </div>
-                <div class="form-group">
-                    <label>🗺️ Sitemap URL (optional):</label>
-                    <input type="url" id="bot-sitemap" placeholder="https://example.com/sitemap.xml">
-                </div>
-                <div class="form-group">
-                    <label>📄 Max Pages to Crawl:</label>
-                    <input type="number" id="bot-pages" value="10" min="1" max="100">
-                </div>
-                <div class="form-group">
-                    <label>🎭 Brand Voice:</label>
-                    <select id="bot-voice">
-                        <option value="friendly">Friendly & Welcoming</option>
-                        <option value="professional">Professional & Formal</option>
-                        <option value="casual">Casual & Relaxed</option>
-                        <option value="technical">Technical & Detailed</option>
-                    </select>
-                </div>
-                <button type="submit">Create Chatbot</button>
-            </form>
-            <div id="chatbot-result"></div>
-        </div>
-        
-        <!-- Chat Tab -->
-        <div id="chat" class="tab-content">
-            <h2>Test Your Chatbot</h2>
-            <div class="form-group">
-                <label>🤖 Select Chatbot:</label>
-                <div style="display: flex; gap: 0.5rem;">
-                    <select id="chat-bot-select" style="flex: 1;">
-                        <option value="">Select a chatbot...</option>
-                    </select>
-                    <button type="button" class="refresh-btn" onclick="loadChatbots()">🔄 Refresh</button>
-                </div>
-            </div>
-            
-            <div class="chat-container" id="chat-messages">
-                <div class="message bot-message">
-                    👋 Hello! I'm your website chatbot. Ask me anything about the website I was trained on!
-                </div>
-            </div>
-            
-            <form onsubmit="sendMessage(event)">
-                <div class="form-group">
-                    <input type="text" id="user-message" placeholder="Type your message..." required>
-                </div>
-                <button type="submit">💬 Send Message</button>
-            </form>
-        </div>
+    <!-- Loading overlay to prevent FOUC -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner"></div>
     </div>
     
+    <!-- All main content is hidden initially -->
+    <div id="app-container" class="hidden">
+        <!-- Navigation -->
+        <nav class="navbar">
+            <div class="nav-container">
+                <div class="logo">
+                    <i class="fas fa-robot"></i> ChatBot SaaS
+                </div>
+                <ul class="nav-menu">
+                    <li><a href="#features" class="nav-link">Features</a></li>
+                    <li><a href="#pricing" class="nav-link">Pricing</a></li>
+                    <li><a href="#contact" class="nav-link">Contact</a></li>
+                    <li id="dashboard-nav-item" class="hidden">
+                        <a href="#" id="nav-dashboard-link" class="nav-link">Dashboard</a>
+                    </li>
+                </ul>
+                <div class="auth-buttons" id="auth-buttons">
+                    <button class="btn btn-outline" id="login-button">
+                        <i class="fas fa-sign-in-alt"></i> Login
+                    </button>
+                    <button class="btn btn-primary" id="register-button">
+                        <i class="fas fa-user-plus"></i> Get Started
+                    </button>
+                </div>
+                <div class="user-menu hidden" id="user-menu">
+                    <button class="btn btn-outline" id="logout-button">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Email Verification Section -->
+        <section class="verification-section" id="verification-section">
+            <div class="verification-card">
+                <div class="verification-icon loading" id="verification-icon">
+                    <i class="fas fa-spinner fa-spin"></i>
+                </div>
+                <h2 id="verification-title">Verifying Your Email...</h2>
+                <p id="verification-message">Please wait while we verify your email address.</p>
+                <div id="verification-actions" class="hidden" style="margin-top: 2rem;">
+                    <button class="btn btn-primary" id="verification-login-button">
+                        <i class="fas fa-sign-in-alt"></i> Go to Login
+                    </button>
+                    <button class="btn btn-outline" id="verification-home-button" style="margin-left: 1rem;">
+                        <i class="fas fa-home"></i> Go to Home
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Hero Section -->
+        <section class="hero" id="hero">
+            <div class="hero-content">
+                <div class="hero-text">
+                    <h1>Transform Your Website with AI-Powered Chatbots</h1>
+                    <p>Create intelligent chatbots that understand your website content and provide instant customer support 24/7. No coding required - just enter your website URL and we'll do the rest!</p>
+                    <div class="hero-buttons">
+                        <button class="btn btn-white btn-hero" id="hero-register-button">
+                            <i class="fas fa-rocket"></i> Start Free Trial
+                        </button>
+                        <button class="btn btn-outline btn-hero" id="hero-features-button" style="color: white; border-color: white;">
+                            <i class="fas fa-play"></i> See How It Works
+                        </button>
+                    </div>
+                </div>
+                <div class="hero-visual">
+                    <div class="demo-widget">
+                        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                            <div style="width: 40px; height: 40px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                                <i class="fas fa-robot" style="color: white;"></i>
+                            </div>
+                            <h3>Your AI Assistant</h3>
+                        </div>
+                        <div style="background: #f8fafc; padding: 1rem; border-radius: 10px; margin-bottom: 1rem;">
+                            <p style="font-size: 0.9rem; color: var(--gray);">Hi! I'm trained on your website content. How can I help you today?</p>
+                        </div>
+                        <div style="background: var(--primary); color: white; padding: 1rem; border-radius: 10px; margin-left: 2rem;">
+                            <p style="font-size: 0.9rem;">What are your pricing plans?</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content -->
+        <main class="main-content" id="main-content">
+            <div class="container">
+                <!-- Features Section -->
+                <section class="section" id="features">
+                    <h2 class="section-title">Powerful Features for Every Business</h2>
+                    <div class="features-grid">
+                        <div class="feature-card animate-fade-in-up">
+                            <div class="feature-icon">
+                                <i class="fas fa-globe"></i>
+                            </div>
+                            <h3>Automatic Website Scraping</h3>
+                            <p>Our AI automatically crawls and learns from your website content, creating a knowledgeable chatbot that understands your business inside and out.</p>
+                        </div>
+                        <div class="feature-card animate-fade-in-up">
+                            <div class="feature-icon">
+                                <i class="fas fa-brain"></i>
+                            </div>
+                            <h3>AI-Powered Conversations</h3>
+                            <p>Advanced language models provide natural, context-aware responses that feel human-like and helpful to your visitors.</p>
+                        </div>
+                        <div class="feature-card animate-fade-in-up">
+                            <div class="feature-icon">
+                                <i class="fas fa-code"></i>
+                            </div>
+                            <h3>Easy Integration</h3>
+                            <p>Add the chatbot to your website with just one line of code. No technical expertise required - it works on any website platform.</p>
+                        </div>
+                        <div class="feature-card animate-fade-in-up">
+                            <div class="feature-icon">
+                                <i class="fas fa-palette"></i>
+                            </div>
+                            <h3>Custom Branding</h3>
+                            <p>Customize colors, position, and personality to match your brand. Choose from friendly, professional, casual, or technical tones.</p>
+                        </div>
+                        <div class="feature-card animate-fade-in-up">
+                            <div class="feature-icon">
+                                <i class="fas fa-chart-bar"></i>
+                            </div>
+                            <h3>Analytics & Insights</h3>
+                            <p>Track conversations, popular topics, and user satisfaction to continuously improve your customer support experience.</p>
+                        </div>
+                        <div class="feature-card animate-fade-in-up">
+                            <div class="feature-icon">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <h3>24/7 Availability</h3>
+                            <p>Your chatbot never sleeps. Provide instant responses to customer queries around the clock, improving satisfaction and conversions.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Pricing Section -->
+                <section class="section" id="pricing">
+                    <h2 class="section-title">Choose Your Plan</h2>
+                    <div class="pricing-grid">
+                        <div class="pricing-card">
+                            <h3>Free</h3>
+                            <div class="price">$0<span class="price-period">/month</span></div>
+                            <ul class="features-list">
+                                <li><i class="fas fa-check"></i> 1 Chatbot</li>
+                                <li><i class="fas fa-check"></i> Up to 10 Pages</li>
+                                <li><i class="fas fa-check"></i> 100 Conversations/month</li>
+                                <li><i class="fas fa-check"></i> Basic Support</li>
+                                <li><i class="fas fa-check"></i> Email Verification</li>
+                            </ul>
+                            <button class="btn btn-outline" id="plan-free-button">Get Started Free</button>
+                        </div>
+                        <div class="pricing-card popular">
+                            <h3>Starter</h3>
+                            <div class="price">$29<span class="price-period">/month</span></div>
+                            <ul class="features-list">
+                                <li><i class="fas fa-check"></i> 3 Chatbots</li>
+                                <li><i class="fas fa-check"></i> Up to 50 Pages Each</li>
+                                <li><i class="fas fa-check"></i> 1,000 Conversations/month</li>
+                                <li><i class="fas fa-check"></i> Priority Support</li>
+                                <li><i class="fas fa-check"></i> Custom Styling</li>
+                                <li><i class="fas fa-check"></i> Analytics Dashboard</li>
+                            </ul>
+                            <button class="btn btn-primary" id="plan-starter-button">Choose Starter</button>
+                        </div>
+                        <div class="pricing-card">
+                            <h3>Professional</h3>
+                            <div class="price">$99<span class="price-period">/month</span></div>
+                            <ul class="features-list">
+                                <li><i class="fas fa-check"></i> 10 Chatbots</li>
+                                <li><i class="fas fa-check"></i> Up to 200 Pages Each</li>
+                                <li><i class="fas fa-check"></i> 5,000 Conversations/month</li>
+                                <li><i class="fas fa-check"></i> Advanced Analytics</li>
+                                <li><i class="fas fa-check"></i> API Access</li>
+                                <li><i class="fas fa-check"></i> White-label Option</li>
+                            </ul>
+                            <button class="btn btn-outline" id="plan-professional-button">Choose Professional</button>
+                        </div>
+                        <div class="pricing-card">
+                            <h3>Enterprise</h3>
+                            <div class="price">$299<span class="price-period">/month</span></div>
+                            <ul class="features-list">
+                                <li><i class="fas fa-check"></i> Unlimited Chatbots</li>
+                                <li><i class="fas fa-check"></i> Up to 1,000 Pages Each</li>
+                                <li><i class="fas fa-check"></i> Unlimited Conversations</li>
+                                <li><i class="fas fa-check"></i> Dedicated Support</li>
+                                <li><i class="fas fa-check"></i> Custom Integration</li>
+                                <li><i class="fas fa-check"></i> On-premise Option</li>
+                            </ul>
+                            <button class="btn btn-outline" id="plan-enterprise-button">Contact Sales</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Contact Section -->
+                <section class="section contact-section" id="contact">
+                    <div class="container">
+                        <h2 class="section-title">Get in Touch</h2>
+                        <div class="contact-grid">
+                            <div class="contact-info">
+                                <h3 style="margin-bottom: 2rem;">Contact Information</h3>
+                                <div class="contact-item">
+                                    <div class="contact-icon">
+                                        <i class="fas fa-envelope"></i>
+                                    </div>
+                                    <div>
+                                        <h4>Email</h4>
+                                        <p>21bq1a0540.vvit@gmail.com</p>
+                                    </div>
+                                </div>
+                                <div class="contact-item">
+                                    <div class="contact-icon">
+                                        <i class="fas fa-phone"></i>
+                                    </div>
+                                    <div>
+                                        <h4>Phone</h4>
+                                        <p>+91 8897445549</p>
+                                    </div>
+                                </div>
+                                <div class="contact-item">
+                                    <div class="contact-icon">
+                                        <i class="fas fa-clock"></i>
+                                    </div>
+                                    <div>
+                                        <h4>Business Hours</h4>
+                                        <p>Mon-Fri: 9:00 AM - 6:00 PM IST</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="contact-form-container">
+                                <div style="background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);">
+                                    <h3 style="margin-bottom: 1.5rem;">Send us a Message</h3>
+                                    <div id="contact-alerts"></div>
+                                    <form id="contact-form">
+                                        <div class="form-group">
+                                            <label class="form-label">Name</label>
+                                            <input type="text" class="form-input" id="contact-name" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Email</label>
+                                            <input type="email" class="form-input" id="contact-email" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Subject</label>
+                                            <input type="text" class="form-input" id="contact-subject" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Message</label>
+                                            <textarea class="form-textarea" id="contact-message" required placeholder="Describe your issue or inquiry..."></textarea>
+                                        </div>
+                                        <button type="submit" class="btn btn-primary" style="width: 100%;">
+                                            <i class="fas fa-paper-plane"></i> Send Message
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <!-- Login Modal -->
+        <div class="modal" id="login-modal">
+            <div class="modal-content">
+                <button class="modal-close" id="close-login-modal-button">&times;</button>
+                <h2 style="margin-bottom: 1.5rem; text-align: center;">Login to Your Account</h2>
+                <div id="login-alerts"></div>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label class="form-label">Email Address</label>
+                        <input type="email" class="form-input" id="login-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-input" id="login-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">
+                        <i class="fas fa-sign-in-alt"></i> Login
+                    </button>
+                </form>
+                <div style="text-align: center; margin-top: 1rem;">
+                    <a href="#" id="forgot-password-link">Forgot Password?</a>
+                </div>
+                <div style="text-align: center; margin-top: 1rem;">
+                    <span>Don't have an account? </span>
+                    <a href="#" id="login-to-register-link">Sign up</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Register Modal -->
+        <div class="modal" id="register-modal">
+            <div class="modal-content">
+                <button class="modal-close" id="close-register-modal-button">&times;</button>
+                <h2 style="margin-bottom: 1.5rem; text-align: center;">Create Your Account</h2>
+                <div id="register-alerts"></div>
+                <form id="register-form">
+                    <div class="form-group">
+                        <label class="form-label">Email Address</label>
+                        <input type="email" class="form-input" id="register-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Company Name</label>
+                        <input type="text" class="form-input" id="register-company" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-input" id="register-password" required minlength="6">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Select Plan</label>
+                        <select class="form-select" id="register-plan" required>
+                            <option value="free">Free Plan</option>
+                            <option value="starter">Starter Plan - $29/month</option>
+                            <option value="professional">Professional Plan - $99/month</option>
+                            <option value="enterprise">Enterprise Plan - $299/month</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">
+                        <i class="fas fa-user-plus"></i> Create Account
+                    </button>
+                </form>
+                <div style="text-align: center; margin-top: 1rem;">
+                    <span>Already have an account? </span>
+                    <a href="#" id="register-to-login-link">Login</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Forgot Password Modal -->
+        <div class="modal" id="forgot-password-modal">
+            <div class="modal-content">
+                <button class="modal-close" id="close-forgot-password-modal-button">&times;</button>
+                <h2 style="margin-bottom: 1.5rem; text-align: center;">Reset Password</h2>
+                <div id="forgot-password-alerts"></div>
+                <form id="forgot-password-form">
+                    <div class="form-group">
+                        <label class="form-label">Email Address</label>
+                        <input type="email" class="form-input" id="forgot-password-email" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">
+                        <i class="fas fa-envelope"></i> Send Reset Link
+                    </button>
+                </form>
+                <div style="text-align: center; margin-top: 1rem;">
+                    <a href="#" id="forgot-password-to-login-link">Back to Login</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Email Verification Modal -->
+        <div class="modal" id="email-verification-modal">
+            <div class="modal-content">
+                <button class="modal-close" id="email-verification-ok-button">&times;</button>
+                <h2 style="margin-bottom: 1.5rem; text-align: center;">Check Your Email</h2>
+                <div style="text-align: center;">
+                    <div style="width: 80px; height: 80px; background: var(--primary); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 2rem;">
+                        <i class="fas fa-envelope"></i>
+                    </div>
+                    <p>We've sent a verification link to your email address. Please check your inbox and click the link to verify your account.</p>
+                    <div style="margin-top: 2rem;">
+                        <button class="btn btn-outline" id="resend-verification-button">
+                            <i class="fas fa-redo"></i> Resend Email
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Create Chatbot Modal -->
+        <div class="modal" id="create-chatbot-modal">
+            <div class="modal-content">
+                <button class="modal-close" id="close-create-chatbot-modal-button">&times;</button>
+                <h2 style="margin-bottom: 1.5rem; text-align: center;">Create New Chatbot</h2>
+                <div id="create-chatbot-alerts"></div>
+                <form id="create-chatbot-form">
+                    <div class="form-group">
+                        <label class="form-label">Chatbot Name</label>
+                        <input type="text" class="form-input" id="chatbot-name" required placeholder="e.g., Customer Support Bot">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Website URL</label>
+                        <input type="url" class="form-input" id="chatbot-website-url" required placeholder="https://yourwebsite.com">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Sitemap URL (Optional)</label>
+                        <input type="url" class="form-input" id="chatbot-sitemap-url" placeholder="https://yourwebsite.com/sitemap.xml">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" id="max-pages-label">Max Pages to Scrape</label>
+                        <input type="number" class="form-input" id="chatbot-max-pages" min="1" max="10" value="10" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Brand Voice</label>
+                        <select class="form-select" id="chatbot-brand-voice" required>
+                            <option value="friendly">Friendly</option>
+                            <option value="professional">Professional</option>
+                            <option value="casual">Casual</option>
+                            <option value="technical">Technical</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">
+                        <i class="fas fa-robot"></i> Create Chatbot
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Embed Code Modal -->
+        <div class="modal" id="embed-code-modal">
+            <div class="modal-content">
+                <button class="modal-close" id="close-embed-modal-button">&times;</button>
+                <h2 style="margin-bottom: 1.5rem; text-align: center;">Embed Code</h2>
+                <p style="margin-bottom: 1rem; color: var(--gray);">Copy this code and paste it into your website's HTML:</p>
+                <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; font-family: monospace; font-size: 0.875rem; overflow-x: auto;">
+                    <code id="embed-code-content">Loading...</code>
+                </div>
+                <button class="btn btn-primary" id="copy-embed-code-button" style="width: 100%;">
+                    <i class="fas fa-copy"></i> Copy to Clipboard
+                </button>
+            </div>
+        </div>
+
+        <!-- Custom Dialog Modal -->
+        <div class="modal" id="custom-dialog-modal">
+            <div class="modal-content" style="max-width: 400px;">
+                <h3 id="dialog-title" style="margin-bottom: 1rem;"></h3>
+                <p id="dialog-message" style="margin-bottom: 2rem;"></p>
+                <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                    <button class="btn btn-outline" id="dialog-cancel" style="display: none;">Cancel</button>
+                    <button class="btn btn-primary" id="dialog-ok">OK</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard Section -->
+        <div class="dashboard" id="dashboard">
+            <div class="sidebar">
+                <ul class="sidebar-menu">
+                    <li class="sidebar-item">
+                        <a href="#" class="sidebar-link active" id="sidebar-overview-link">
+                            <i class="fas fa-chart-pie"></i> Overview
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="#" class="sidebar-link" id="sidebar-chatbots-link">
+                            <i class="fas fa-robot"></i> My Chatbots
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="#" class="sidebar-link" id="sidebar-analytics-link">
+                            <i class="fas fa-chart-bar"></i> Analytics
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="#" class="sidebar-link" id="sidebar-settings-link">
+                            <i class="fas fa-cog"></i> Settings
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="#" class="sidebar-link" id="sidebar-billing-link">
+                            <i class="fas fa-credit-card"></i> Billing
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="dashboard-content">
+                <!-- Overview Section -->
+                <div id="overview-section" class="dashboard-section">
+                    <h2 style="margin-bottom: 2rem;">Dashboard Overview</h2>
+                    <div class="stats-grid" id="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="total-chatbots">0</div>
+                            <div class="stat-label">Total Chatbots</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="total-conversations">0</div>
+                            <div class="stat-label">Total Conversations</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="monthly-conversations">0</div>
+                            <div class="stat-label">This Month</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="current-plan">Free</div>
+                            <div class="stat-label">Current Plan</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 2rem;">
+                        <h3 style="margin-bottom: 1rem;">Quick Actions</h3>
+                        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                            <button class="btn btn-primary" id="create-new-chatbot-button">
+                                <i class="fas fa-plus"></i> Create New Chatbot
+                            </button>
+                            <button class="btn btn-outline" id="view-all-chatbots-button">
+                                <i class="fas fa-list"></i> View All Chatbots
+                            </button>
+                            <button class="btn btn-outline" id="view-analytics-button">
+                                <i class="fas fa-chart-bar"></i> View Analytics
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chatbots Section -->
+                <div id="chatbots-section" class="dashboard-section hidden">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                        <h2>My Chatbots</h2>
+                        <button class="btn btn-primary" id="create-new-chatbot-button-2">
+                            <i class="fas fa-plus"></i> Create New Chatbot
+                        </button>
+                    </div>
+                    <div class="chatbot-list" id="chatbot-list">
+                        <div style="padding: 2rem; text-align: center; color: var(--gray);">
+                            <i class="fas fa-robot" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;"></i>
+                            <p>No chatbots created yet. Create your first chatbot to get started!</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analytics Section -->
+                <div id="analytics-section" class="dashboard-section hidden">
+                    <h2 style="margin-bottom: 2rem;">Analytics</h2>
+                    <div id="analytics-content">
+                        <p style="text-align: center; color: var(--gray); padding: 2rem;">
+                            Create a chatbot first to view analytics data.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Settings Section -->
+                <div id="settings-section" class="dashboard-section hidden">
+                    <h2 style="margin-bottom: 2rem;">Account Settings</h2>
+                    <div style="background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);">
+                        <form id="settings-form">
+                            <div class="form-group">
+                                <label class="form-label">Email Address</label>
+                                <input type="email" class="form-input" id="settings-email" readonly>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Company Name</label>
+                                <input type="text" class="form-input" id="settings-company">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Current Plan</label>
+                                <input type="text" class="form-input" id="settings-plan" readonly>
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Save Changes
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Billing Section -->
+                <div id="billing-section" class="dashboard-section hidden">
+                    <h2 style="margin-bottom: 2rem;">Billing & Subscription</h2>
+                    <div style="background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);">
+                        <div id="current-subscription">
+                            <h3>Current Subscription</h3>
+                            <p id="subscription-details">Loading...</p>
+                        </div>
+                        <div style="margin-top: 2rem;" id="upgrade-plans-container">
+                            <h3>Upgrade Plan</h3>
+                            <div class="pricing-grid" style="margin-top: 1rem;">
+                                <div class="pricing-card" style="transform: none;">
+                                    <h3>Starter</h3>
+                                    <div class="price">$29<span class="price-period">/month</span></div>
+                                    <button class="btn btn-primary btn-small" id="upgrade-starter-button">Upgrade</button>
+                                </div>
+                                <div class="pricing-card" style="transform: none;">
+                                    <h3>Professional</h3>
+                                    <div class="price">$99<span class="price-period">/month</span></div>
+                                    <button class="btn btn-primary btn-small" id="upgrade-professional-button">Upgrade</button>
+                                </div>
+                                <div class="pricing-card" style="transform: none;">
+                                    <h3>Enterprise</h3>
+                                    <div class="price">$299<span class="price-period">/month</span></div>
+                                    <button class="btn btn-primary btn-small" id="upgrade-enterprise-button">Upgrade</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div> <!-- End of app-container -->
+
     <script>
-        let currentToken = null; // Removed localStorage usage
-        let currentChatbotId = null;
-        
-        const API_BASE = 'http://localhost:8000';
-        
-        // Update status indicator
-        function updateStatus() {
-            const indicator = document.getElementById('status-indicator');
-            if (currentToken) {
-                indicator.textContent = '✅ Logged In';
-                indicator.className = 'status-indicator status-logged-in';
-            } else {
-                indicator.textContent = '🔒 Not Logged In';
-                indicator.className = 'status-indicator status-logged-out';
-            }
-        }
-        
-        // Tab switching
-        function showTab(tabName) {
-            // Hide all tabs
-            document.querySelectorAll('.tab-content').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelectorAll('.tab-button').forEach(btn => {
-                btn.classList.remove('active');
+        // Global state variables for the entire application
+        window.currentUser = null;
+        window.authToken = null;
+        window.resendEmailValue = null;
+        window.API_BASE_URL = /\.netlify\.app$/.test(location.hostname)
+        ? '/api'
+        : 'http://localhost:8000';
+       
+        // UI Functions
+        function showModal(modalId) {
+            document.querySelectorAll('.modal').forEach(modal => {
+                modal.classList.remove('active');
             });
             
-            // Show selected tab
-            document.getElementById(tabName).classList.add('active');
-            event.target.classList.add('active');
-            
-            // Load chatbots when chat tab is opened
-            if (tabName === 'chat') {
-                loadChatbots();
-            }
-        }
-        
-        // Register function
-        async function register(event) {
-            event.preventDefault();
-            
-            const submitBtn = event.target.querySelector('button[type="submit"]');
-            const originalText = submitBtn.textContent;
-            submitBtn.textContent = 'Creating Account...';
-            submitBtn.disabled = true;
-            
-            const data = {
-                email: document.getElementById('reg-email').value,
-                password: document.getElementById('reg-password').value,
-                company_name: document.getElementById('reg-company').value,
-                plan: document.getElementById('reg-plan').value
-            };
-            
-            try {
-                const response = await fetch(`${API_BASE}/auth/register`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(data)
-                });
-                
-                const result = await response.json();
-                
-                if (response.ok) {
-                    showResult('register-result', '🎉 Account created successfully! You can now login.', 'success');
-                    document.querySelector('#register form').reset();
-                    // Auto-switch to login tab after successful registration
-                    setTimeout(() => {
-                        showTab('login');
-                        document.querySelector('.tab-button:nth-child(2)').click();
-                    }, 1500);
-                } else {
-                    showResult('register-result', '❌ ' + (result.detail || 'Registration failed'), 'error');
+            const modal = document.getElementById(`${modalId}-modal`);
+            if (modal) {
+                modal.classList.add('active');
+                const alertContainer = modal.querySelector('[id$="-alerts"]');
+                if (alertContainer) {
+                    alertContainer.innerHTML = '';
                 }
-            } catch (error) {
-                showResult('register-result', '🌐 Network error: ' + error.message, 'error');
-            } finally {
-                submitBtn.textContent = originalText;
-                submitBtn.disabled = false;
             }
         }
-        
-        // Login function
-        async function login(event) {
-            event.preventDefault();
-            
-            const submitBtn = event.target.querySelector('button[type="submit"]');
-            const originalText = submitBtn.textContent;
-            submitBtn.textContent = '🔄 Signing In...';
-            submitBtn.disabled = true;
-            
-            const formData = new FormData();
-            formData.append('username', document.getElementById('login-email').value);
-            formData.append('password', document.getElementById('login-password').value);
-            
+
+        function closeModal(modalId) {
+            const modal = document.getElementById(`${modalId}-modal`);
+            if (modal) {
+                modal.classList.remove('active');
+            }
+        }
+
+        function showAlert(containerId, message, type) {
+            const alertContainer = document.getElementById(`${containerId}-alerts`);
+            if (alertContainer) {
+                alertContainer.innerHTML = `
+                    <div class="alert alert-${type}">
+                        ${message}
+                    </div>
+                `;
+            }
+        }
+
+        function showCustomDialog(title, message, isConfirm = false) {
+            return new Promise((resolve) => {
+                const dialogModal = document.getElementById('custom-dialog-modal');
+                const dialogTitle = document.getElementById('dialog-title');
+                const dialogMessage = document.getElementById('dialog-message');
+                const dialogOk = document.getElementById('dialog-ok');
+                const dialogCancel = document.getElementById('dialog-cancel');
+
+                dialogTitle.textContent = title;
+                dialogMessage.textContent = message;
+                dialogModal.classList.add('active');
+
+                if (isConfirm) {
+                    dialogCancel.style.display = 'inline-block';
+                    dialogOk.textContent = 'Confirm';
+                } else {
+                    dialogCancel.style.display = 'none';
+                    dialogOk.textContent = 'OK';
+                }
+
+                const handleOk = () => {
+                    dialogModal.classList.remove('active');
+                    dialogOk.removeEventListener('click', handleOk);
+                    dialogCancel.removeEventListener('click', handleCancel);
+                    resolve(true);
+                };
+
+                const handleCancel = () => {
+                    dialogModal.classList.remove('active');
+                    dialogOk.removeEventListener('click', handleOk);
+                    dialogCancel.removeEventListener('click', handleCancel);
+                    resolve(false);
+                };
+                
+                dialogOk.addEventListener('click', handleOk);
+                if (isConfirm) {
+                    dialogCancel.addEventListener('click', handleCancel);
+                }
+            });
+        }
+
+        function scrollToSection(sectionId) {
+            const element = document.getElementById(sectionId);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        function hideEmailVerificationPage() {
+            document.getElementById('verification-section').classList.remove('active');
+            document.getElementById('hero').classList.remove('hidden');
+            document.getElementById('main-content').classList.remove('hidden');
+        }
+
+        function showEmailVerificationPage() {
+            document.getElementById('hero').classList.add('hidden');
+            document.getElementById('main-content').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('active');
+            document.getElementById('verification-section').classList.add('active');
+        }
+
+        function selectPlan(plan) {
+            const registerPlan = document.getElementById('register-plan');
+            if (registerPlan) {
+                registerPlan.value = plan;
+            }
+            showModal('register');
+        }
+
+        function showLandingPage() {
+  const loggedIn = !!window.authToken;
+
+  document.getElementById('verification-section')?.classList.remove('active');
+  document.getElementById('dashboard')?.classList.remove('active');
+
+  // hide hero after login
+  document.getElementById('hero')?.classList.toggle('hidden', loggedIn);
+  document.getElementById('main-content')?.classList.remove('hidden');
+
+  document.getElementById('auth-buttons')?.classList.toggle('hidden', loggedIn);
+  document.getElementById('user-menu')?.classList.toggle('hidden', !loggedIn);
+  document.getElementById('dashboard-nav-item')?.classList.toggle('hidden', !loggedIn);
+}
+
+
+
+        async function login(email, password) {
             try {
-                const response = await fetch(`${API_BASE}/auth/login`, {
+                const formData = new FormData();
+                formData.append('username', email);
+                formData.append('password', password);
+
+                const response = await fetch(`${window.API_BASE_URL}/auth/login`, {
                     method: 'POST',
                     body: formData
                 });
-                
-                const result = await response.json();
-                
+
+                const data = await response.json();
+
                 if (response.ok) {
-                    currentToken = result.access_token;
-                    updateStatus();
-                    showResult('login-result', '🎉 Login successful! Welcome back!', 'success');
-                    document.querySelector('#login form').reset();
+                    window.authToken = data.access_token;
+                    localStorage.setItem('authToken', window.authToken);
                     
-                    // Auto-switch to chatbot creation tab after successful login
-                    setTimeout(() => {
-                        showTab('chatbot');
-                        document.querySelector('.tab-button:nth-child(3)').click();
-                    }, 1500);
+                    closeModal('login');
+                    await verifyToken();
+                    showAlert('login', 'Login successful!', 'success');
                 } else {
-                    showResult('login-result', '❌ ' + (result.detail || 'Login failed'), 'error');
+                    showAlert('login', data.detail || 'Login failed', 'error');
                 }
             } catch (error) {
-                showResult('login-result', '🌐 Network error: ' + error.message, 'error');
-            } finally {
-                submitBtn.textContent = originalText;
-                submitBtn.disabled = false;
+                console.error('Login error:', error);
+                showAlert('login', 'Network error. Please try again.', 'error');
             }
         }
-        
-        // Create chatbot function - REPLACE YOUR EXISTING createChatbot FUNCTION WITH THIS
-async function createChatbot(event) {
-    event.preventDefault();
-    
-    if (!currentToken) {
-        showResult('chatbot-result', '🔒 Please login first!', 'error');
-        return;
-    }
-    
-    const submitBtn = event.target.querySelector('button[type="submit"]');
-    const originalText = submitBtn.textContent;
-    submitBtn.textContent = '🤖 Creating Bot...';
-    submitBtn.disabled = true;
-    
-    const data = {
-        name: document.getElementById('bot-name').value,
-        website_url: document.getElementById('bot-website').value,
-        sitemap_url: document.getElementById('bot-sitemap').value || null,
-        max_pages: parseInt(document.getElementById('bot-pages').value),
-        brand_voice: document.getElementById('bot-voice').value
-    };
-    
-    try {
-        showResult('chatbot-result', '⏳ Creating chatbot... This may take a few minutes.', 'success');
-        
-        console.log('Making request with token:', currentToken);
-        
-        const response = await fetch(`${API_BASE}/chatbots/create`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${currentToken}`
-            },
-            body: JSON.stringify(data)
-        });
-        
-        console.log('Response status:', response.status);
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.log('Error response:', errorText);
-            throw new Error(`Server returned ${response.status}: ${errorText}`);
+
+        async function register(email, company, password, plan) {
+            try {
+                const response = await fetch(`${window.API_BASE_URL}/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        company_name: company,
+                        password: password,
+                        plan: plan
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    window.resendEmailValue = email;
+                    closeModal('register');
+                    showModal('email-verification');
+                    showAlert('register', 'Account created! Please check your email.', 'success');
+                } else {
+                    showAlert('register', data.detail || 'Registration failed', 'error');
+                }
+            } catch (error) {
+                console.error('Registration error:', error);
+                showAlert('register', 'Network error. Please try again.', 'error');
+            }
         }
-        
-        const result = await response.json();
-        showResult('chatbot-result', `🎉 Chatbot "${result.name}" created successfully! ID: ${result.id}`, 'success');
-        document.querySelector('#chatbot form').reset();
-        loadChatbots(); // Refresh chatbot list
-        
-    } catch (error) {
-        console.error('Chatbot creation error:', error);
-        showResult('chatbot-result', '❌ Error: ' + error.message, 'error');
-    } finally {
-        submitBtn.textContent = originalText;
-        submitBtn.disabled = false;
-    }
-}
-        
-        // Load chatbots
-        async function loadChatbots() {
-            if (!currentToken) {
+
+        async function verifyEmail(token) {
+            const iconEl = document.getElementById('verification-icon');
+            const titleEl = document.getElementById('verification-title');
+            const messageEl = document.getElementById('verification-message');
+            const actionsEl = document.getElementById('verification-actions');
+
+            if (!iconEl || !titleEl || !messageEl || !actionsEl) {
+                console.error("Verification UI elements not found in DOM!");
                 return;
             }
-            
-            try {
-                const response = await fetch(`${API_BASE}/chatbots/list`, {
-                    headers: {
-                        'Authorization': `Bearer ${currentToken}`
 
+            try {
+                const response = await fetch(`${window.API_BASE_URL}/auth/verify-email`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: token })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    iconEl.className = 'verification-icon';
+                    iconEl.innerHTML = '<i class="fas fa-check"></i>';
+                    titleEl.textContent = 'Email Verified Successfully!';
+                    messageEl.textContent = 'Your email has been verified. You can now log in to your account.';
+                    actionsEl.classList.remove('hidden');
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                } else {
+                    iconEl.className = 'verification-icon error';
+                    iconEl.innerHTML = '<i class="fas fa-times"></i>';
+                    titleEl.textContent = 'Verification Failed';
+                    messageEl.textContent = data.detail || 'The verification link is invalid or has expired.';
+                    actionsEl.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Email verification error:', error);
+                iconEl.className = 'verification-icon error';
+                iconEl.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                titleEl.textContent = 'Network Error';
+                messageEl.textContent = 'Unable to verify email. Please check your connection and try again.';
+                actionsEl.classList.remove('hidden');
+            }
+        }
+
+        async function forgotPassword(email) {
+            try {
+                const response = await fetch(`${window.API_BASE_URL}/auth/forgot-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email })
+                });
+
+                const data = await response.json();
+                showAlert('forgot-password', data.message, 'success');
+            } catch (error) {
+                console.error('Forgot password error:', error);
+                showAlert('forgot-password', 'Network error. Please try again.', 'error');
+            }
+        }
+
+        async function resendVerification() {
+            if (!window.resendEmailValue) {
+                await showCustomDialog('Resend Error', 'Please register an email address first.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${window.API_BASE_URL}/auth/resend-verification`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: window.resendEmailValue })
+                });
+
+                const data = await response.json();
+                
+                if(response.ok) {
+                    await showCustomDialog('Resent!', data.message);
+                } else {
+                    await showCustomDialog('Error', data.detail || 'Failed to resend verification email.', 'error');
+                }
+            } catch (error) {
+                console.error('Resend verification error:', error);
+                await showCustomDialog('Network Error', 'Network error. Please try again.', 'error');
+            }
+        }
+
+        async function verifyToken() {
+            try {
+                const response = await fetch(`${window.API_BASE_URL}/auth/me`, {
+                    headers: { 'Authorization': `Bearer ${window.authToken}` }
+                });
+
+                if (response.ok) {
+                    window.currentUser = await response.json();
+                    document.getElementById('dashboard-nav-item')?.classList.remove('hidden');
+                    showDashboard();
+                    await loadDashboardData();
+                } else {
+                    localStorage.removeItem('authToken');
+                    window.authToken = null;
+                    showLandingPage();
+                }
+            } catch (error) {
+                console.error('Token verification failed:', error);
+                localStorage.removeItem('authToken');
+                window.authToken = null;
+                showLandingPage();
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            document.getElementById('dashboard-nav-item')?.classList.add('hidden');
+            window.authToken = null;
+            window.currentUser = null;
+            showLandingPage();
+        }
+
+        // Dashboard Functions
+        function showDashboard() {
+            document.getElementById('hero').classList.add('hidden');
+            document.getElementById('main-content').classList.add('hidden');
+            document.getElementById('verification-section').classList.remove('active');
+            document.getElementById('dashboard').classList.add('active');
+            document.getElementById('auth-buttons').classList.add('hidden');
+            document.getElementById('user-menu').classList.remove('hidden');
+        }
+
+        function showDashboardSection(sectionName) {
+            document.querySelectorAll('.dashboard-section').forEach(section => {
+                section.classList.add('hidden');
+            });
+            
+            document.getElementById(`${sectionName}-section`).classList.remove('hidden');
+            
+            document.querySelectorAll('.sidebar-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            
+            // Find the correct sidebar link and make it active
+            const targetLink = document.getElementById(`sidebar-${sectionName}-link`);
+            if (targetLink) {
+                targetLink.classList.add('active');
+            }
+        }
+
+        async function loadDashboardData() {
+            try {
+                const userResponse = await fetch(`${window.API_BASE_URL}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${window.authToken}`
                     }
                 });
-                
-                const chatbots = await response.json();
-                const select = document.getElementById('chat-bot-select');
-                
-                // Clear existing options
-                select.innerHTML = '<option value="">Select a chatbot...</option>';
-                
-                // Add chatbots to select
-                chatbots.forEach(bot => {
-                    const option = document.createElement('option');
-                    option.value = bot.id;
-                    option.textContent = `🤖 ${bot.name} (${bot.website_url})`;
-                    select.appendChild(option);
-                });
-                
+
+                if (userResponse.ok) {
+                    const userData = await userResponse.json();
+                    window.currentUser = userData;
+                    
+                    document.getElementById('total-chatbots').textContent = userData.stats.chatbots;
+                    document.getElementById('monthly-conversations').textContent = userData.stats.monthly_conversations;
+                    document.getElementById('current-plan').textContent = userData.plan.charAt(0).toUpperCase() + userData.plan.slice(1);
+                    
+                    document.getElementById('settings-email').value = userData.email;
+                    document.getElementById('settings-company').value = userData.company_name;
+                    document.getElementById('settings-plan').value = userData.plan.charAt(0).toUpperCase() + userData.plan.slice(1);
+
+                    const maxPagesInput = document.getElementById('chatbot-max-pages');
+                    const maxPagesLabel = document.getElementById('max-pages-label');
+                    const maxPagesLimit = userData.plan_limits.max_pages_per_bot;
+
+                    if (maxPagesInput && maxPagesLabel) {
+                        maxPagesInput.max = maxPagesLimit === -1 ? 1000 : maxPagesLimit;
+                        maxPagesInput.value = Math.min(parseInt(maxPagesInput.value), maxPagesInput.max);
+                        maxPagesLabel.innerHTML = `Max Pages to Scrape <small>(Your plan limit: ${maxPagesLimit === -1 ? 'Unlimited' : maxPagesLimit})</small>`;
+                    }
+                }
+
+                await loadChatbots();
             } catch (error) {
-                console.error('Failed to load chatbots:', error);
+                console.error('Error loading dashboard data:', error);
             }
         }
-        
-        // Send message
-        async function sendMessage(event) {
-            event.preventDefault();
-            
-            const chatbotId = document.getElementById('chat-bot-select').value;
-            const message = document.getElementById('user-message').value;
-            
-            if (!chatbotId) {
-                alert('Please select a chatbot first!');
-                return;
-            }
-            
-            if (!currentToken) {
-                alert('Please login first!');
-                return;
-            }
-            
-            // Add user message to chat
-            addMessageToChat(message, 'user');
-            document.getElementById('user-message').value = '';
-            
-            // Show typing indicator
-            const typingDiv = document.createElement('div');
-            typingDiv.className = 'message bot-message';
-            typingDiv.innerHTML = '💭 Typing...';
-            typingDiv.id = 'typing-indicator';
-            document.getElementById('chat-messages').appendChild(typingDiv);
-            
+
+        async function loadChatbots() {
             try {
-                const response = await fetch(`${API_BASE}/chat/${chatbotId}`, {
+                const response = await fetch(`${window.API_BASE_URL}/chatbots/list`, {
+                    headers: {
+                        'Authorization': `Bearer ${window.authToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const chatbots = await response.json();
+                    displayChatbots(chatbots);
+                    
+                    const totalConversations = chatbots.reduce((sum, bot) => sum + bot.total_conversations, 0);
+                    document.getElementById('total-conversations').textContent = totalConversations;
+                }
+            } catch (error) {
+                console.error('Error loading chatbots:', error);
+            }
+        }
+
+        function displayChatbots(chatbots) {
+            const chatbotList = document.getElementById('chatbot-list');
+            
+            if (chatbots.length === 0) {
+                chatbotList.innerHTML = `
+                    <div style="padding: 2rem; text-align: center; color: var(--gray);">
+                        <i class="fas fa-robot" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;"></i>
+                        <p>No chatbots created yet. Create your first chatbot to get started!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            chatbotList.innerHTML = chatbots.map(chatbot => `
+                <div class="chatbot-item" data-chatbot-id="${chatbot.id}">
+                    <div class="chatbot-info">
+                        <h4>${chatbot.name}</h4>
+                        <p>${chatbot.website_url} • ${chatbot.page_count} pages • ${chatbot.total_conversations} conversations</p>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <span class="status-badge status-${chatbot.status}">
+                            ${chatbot.status.charAt(0).toUpperCase() + chatbot.status.slice(1)}
+                        </span>
+                        <div class="chatbot-actions">
+                            ${chatbot.status === 'active' ? `
+                                <button class="btn btn-outline btn-small action-embed">
+                                    <i class="fas fa-code"></i> Embed
+                                </button>
+                                <button class="btn btn-primary btn-small action-analytics">
+                                    <i class="fas fa-chart-bar"></i> Analytics
+                                </button>
+                            ` : ''}
+                            <button class="btn-delete btn-small action-delete">
+                                <i class="fas fa-trash-alt"></i> Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function createChatbot(name, websiteUrl, sitemapUrl, maxPages, brandVoice) {
+            try {
+                const maxPagesInput = document.getElementById('chatbot-max-pages');
+                if (parseInt(maxPages) > parseInt(maxPagesInput.max)) {
+                    showAlert('create-chatbot', `Page limit exceeded. Your plan allows a maximum of ${maxPagesInput.max} pages.`, 'error');
+                    return;
+                }
+
+                const response = await fetch(`${window.API_BASE_URL}/chatbots/create`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${currentToken}`
+                        'Authorization': `Bearer ${window.authToken}`
                     },
                     body: JSON.stringify({
-                        message: message,
-                        session_id: 'web-session-' + Date.now()
+                        name: name,
+                        website_url: websiteUrl,
+                        sitemap_url: sitemapUrl || null,
+                        max_pages: parseInt(maxPages),
+                        brand_voice: brandVoice
                     })
                 });
-                
-                // Remove typing indicator
-                const typing = document.getElementById('typing-indicator');
-                if (typing) typing.remove();
-                
-                const result = await response.json();
-                
+
+                const data = await response.json();
+
                 if (response.ok) {
-                    addMessageToChat(result.response, 'bot');
+                    closeModal('create-chatbot');
+                    showAlert('create-chatbot', 'Chatbot creation started! We\'re scraping your website...', 'success');
+                    
+                    setTimeout(() => {
+                        loadChatbots();
+                    }, 2000);
                 } else {
-                    addMessageToChat('❌ Error: ' + (result.detail || 'Failed to get response'), 'bot');
+                    showAlert('create-chatbot', data.detail || 'Failed to create chatbot', 'error');
                 }
             } catch (error) {
-                // Remove typing indicator
-                const typing = document.getElementById('typing-indicator');
-                if (typing) typing.remove();
-                
-                addMessageToChat('🌐 Network error: ' + error.message, 'bot');
+                console.error('Create chatbot error:', error);
+                showAlert('create-chatbot', 'Network error. Please try again.', 'error');
             }
         }
-        
-        // Add message to chat
-        function addMessageToChat(message, type) {
-            const chatContainer = document.getElementById('chat-messages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${type}-message`;
-            messageDiv.textContent = message;
-            chatContainer.appendChild(messageDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+        async function showEmbedCode(chatbotId) {
+            try {
+                const response = await fetch(`${window.API_BASE_URL}/chatbots/${chatbotId}/embed-code`, {
+                    headers: {
+                        'Authorization': `Bearer ${window.authToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('embed-code-content').textContent = data.embed_code;
+                    showModal('embed-code');
+                } else {
+                    const data = await response.json();
+                    await showCustomDialog('Error', data.detail || 'Failed to get embed code');
+                }
+            } catch (error) {
+                console.error('Embed code error:', error);
+                await showCustomDialog('Error', 'Network error. Please try again.');
+            }
         }
-        
-        // Show result helper
-        function showResult(elementId, message, type) {
-            const element = document.getElementById(elementId);
-            element.innerHTML = `<div class="result ${type}">${message}</div>`;
+
+        async function copyEmbedCode() {
+            const embedCode = document.getElementById('embed-code-content').textContent;
+            try {
+                await navigator.clipboard.writeText(embedCode);
+                showCustomDialog('Success', 'Embed code copied to clipboard!');
+            } catch (err) {
+                console.error('Failed to copy using clipboard API. Falling back to execCommand.', err);
+                const textArea = document.createElement('textarea');
+                textArea.value = embedCode;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    showCustomDialog('Success', 'Embed code copied to clipboard!');
+                } catch (execErr) {
+                    console.error('Fallback copy failed:', execErr);
+                    showCustomDialog('Error', 'Failed to copy code. Please select the code and copy it manually.');
+                } finally {
+                    document.body.removeChild(textArea);
+                }
+            }
         }
-        
-        // Initialize status
-        updateStatus();
-        
-        // Load chatbots on page load if logged in
-        if (currentToken) {
-            loadChatbots();
+
+        async function deleteChatbot(chatbotId) {
+            const shouldDelete = await showCustomDialog(
+                'Delete Chatbot', 
+                'Are you sure you want to permanently delete this chatbot and all its data?',
+                true
+            );
+
+            if (!shouldDelete) return;
+
+            try {
+                const response = await fetch(`${window.API_BASE_URL}/chatbots/${chatbotId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${window.authToken}`
+                    }
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    await showCustomDialog('Success', data.message);
+                    loadChatbots();
+                } else {
+                    await showCustomDialog('Error', data.detail || 'Failed to delete chatbot.', 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting chatbot:', error);
+                await showCustomDialog('Network Error', 'Network error. Please try again.', 'error');
+            }
         }
+
+        async function viewAnalytics(chatbotId) {
+            showDashboardSection('analytics');
+            
+            try {
+                const response = await fetch(`${window.API_BASE_URL}/analytics/${chatbotId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${window.authToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayAnalytics(data);
+                } else {
+                    const errorData = await response.json();
+                    document.getElementById('analytics-content').innerHTML = `
+                        <div class="alert alert-error">
+                            ${errorData.detail || 'Failed to load analytics'}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Analytics error:', error);
+                document.getElementById('analytics-content').innerHTML = `
+                    <div class="alert alert-error">
+                        Network error. Please try again.
+                    </div>
+                `;
+            }
+        }
+
+        function displayAnalytics(data) {
+            const analyticsContent = document.getElementById('analytics-content');
+            
+            analyticsContent.innerHTML = `
+                <!-- Overall Stats -->
+                <div class="stats-grid" style="margin-bottom: 2rem;">
+                    <div class="stat-card">
+                        <div class="stat-value">${data.overall.total_conversations}</div>
+                        <div class="stat-label">Total Conversations</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${data.overall.unique_sessions}</div>
+                        <div class="stat-label">Unique Sessions</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${data.overall.avg_response_time_ms}ms</div>
+                        <div class="stat-label">Avg Response Time</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${data.overall.unique_visitors}</div>
+                        <div class="stat-label">Unique Visitors</div>
+                    </div>
+                </div>
+
+                <!-- Daily Stats Chart -->
+                <div class="chart-container">
+                    <h3 class="chart-title">Daily Conversations (Last ${data.period_days} days)</h3>
+                    <div id="daily-chart" style="height: 300px; display: flex; align-items: end; gap: 4px; padding: 20px;">
+                        ${data.daily_stats.map(stat => `
+                            <div style="
+                                background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+                                height: ${Math.max(stat.total_conversations * 10, 10)}px;
+                                min-width: 20px;
+                                border-radius: 4px 4px 0 0;
+                                position: relative;
+                                flex: 1;
+                                max-width: 40px;
+                            " title="${stat.date}: ${stat.total_conversations} conversations">
+                                <div style="
+                                    position: absolute;
+                                    bottom: -25px;
+                                    left: 50%;
+                                    transform: translateX(-50%) rotate(-45deg);
+                                    font-size: 10px;
+                                    color: var(--gray);
+                                    white-space: nowrap;
+                                ">${new Date(stat.date).getDate()}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Popular Topics -->
+                <div class="popular-topics">
+                    <h3 class="chart-title">Popular Topics</h3>
+                    ${data.popular_topics.length > 0 ? data.popular_topics.map(topic => `
+                        <div class="topic-item">
+                            <span style="flex: 1;">${topic.topic}</span>
+                            <span class="topic-frequency">${topic.frequency}</span>
+                        </div>
+                    `).join('') : '<p style="text-align: center; color: var(--gray);">No topics data available</p>'}
+                </div>
+            `;
+        }
+
+        async function upgradePlan(plan) {
+            const shouldUpgrade = await showCustomDialog(
+                'Upgrade Plan',
+                `Are you sure you want to upgrade to the ${plan.charAt(0).toUpperCase() + plan.slice(1)} plan?`,
+                true
+            );
+
+            if (!shouldUpgrade) return;
+
+            try {
+                const response = await fetch(`${window.API_BASE_URL}/subscription/upgrade`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${window.authToken}`
+                    },
+                    body: JSON.stringify({ plan: plan })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    await showCustomDialog('Success', 'Subscription upgraded successfully!');
+                    await loadDashboardData();
+                } else {
+                    await showCustomDialog('Error', data.detail || 'Failed to upgrade subscription');
+                }
+            } catch (error) {
+                console.error('Upgrade error:', error);
+                await showCustomDialog('Network Error', 'Network error. Please try again.', 'error');
+            }
+        }
+
+        // Contact form handler
+        /*async function submitContactForm(name, email, subject, message) {
+            try {
+                // Since this is a demo, we'll just show a success message
+                // In a real app, you'd send this to your backend
+                await showCustomDialog('Message Sent', 'Thank you for your message! We\'ll get back to you within 24 hours.');
+                
+                // Clear the form
+                document.getElementById('contact-form').reset();
+            } catch (error) {
+                console.error('Contact form error:', error);
+                await showCustomDialog('Error', 'Failed to send message. Please try again or contact us directly.');
+            }
+        }*/
+       
+async function submitContactForm(name, email, subject, message) {
+    try {
+        // Send contact form data to your backend
+        const response = await fetch(`${window.API_BASE_URL}/contact/send`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                // Include auth token if user is logged in
+                ...(window.authToken && { 'Authorization': `Bearer ${window.authToken}` })
+            },
+            body: JSON.stringify({
+                name: name,
+                email: email,
+                subject: subject,
+                message: message,
+                // Include user info if logged in
+                ...(window.currentUser && { 
+                    user_id: window.currentUser.id,
+                    company_name: window.currentUser.company_name 
+                })
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            await showCustomDialog('Message Sent', 'Thank you for your message! We\'ll get back to you within 24 hours.');
+            
+            // Clear the form
+            document.getElementById('contact-form').reset();
+        } else {
+            await showCustomDialog('Error', data.detail || 'Failed to send message. Please try again or contact us directly.');
+        }
+    } catch (error) {
+        console.error('Contact form error:', error);
+        await showCustomDialog('Error', 'Failed to send message. Please try again or contact us directly.');
+    }
+}
+
+
+        function goToLogin() {
+            hideEmailVerificationPage();
+            showModal('login');
+        }
+
+        function goToHome() {
+            hideEmailVerificationPage();
+        }
+
+        function observeElements() {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('animate-fade-in-up');
+                    }
+                });
+            }, {
+                threshold: 0.1
+            });
+
+            document.querySelectorAll('.feature-card').forEach(card => {
+                observer.observe(card);
+            });
+        }
+
+        function setupEventHandlers() {
+  // --- NAV LINKS ---
+  document.querySelectorAll('.nav-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      const href = link.getAttribute('href') || '';
+
+      // Special case: Dashboard link
+      if (link.id === 'nav-dashboard-link') {
+        e.preventDefault();
+        showDashboard();
+        // Make sure the nav item is visible and data loads
+        document.getElementById('dashboard-nav-item')?.classList.remove('hidden');
+        loadDashboardData();
+        return;
+      }
+
+      // Section links
+      if (href.startsWith('#')) {
+        e.preventDefault();
+        const sectionId = href.slice(1);
+        const inDashboard = document.getElementById('dashboard')?.classList.contains('active');
+
+        if (inDashboard) {
+          // Go back to marketing sections but keep logged-in header and hide hero
+          showLandingPageKeepAuth();
+          setTimeout(() => scrollToSection(sectionId), 50);
+        } else {
+          scrollToSection(sectionId);
+        }
+      }
+      // any other href: let browser handle (or add more normalization if you use /pricing, etc.)
+    });
+  });
+
+  // --- Auth buttons ---
+  document.getElementById('login-button')?.addEventListener('click', () => showModal('login'));
+  document.getElementById('register-button')?.addEventListener('click', () => showModal('register'));
+  document.getElementById('logout-button')?.addEventListener('click', () => {
+    localStorage.removeItem('authToken');
+    window.authToken = null;
+    window.currentUser = null;
+    // hide dashboard nav item on logout
+    document.getElementById('dashboard-nav-item')?.classList.add('hidden');
+    showLandingPage();
+  });
+
+  // --- Hero buttons ---
+  document.getElementById('hero-register-button')?.addEventListener('click', () => showModal('register'));
+  document.getElementById('hero-features-button')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    scrollToSection('features');
+  });
+
+  // --- Pricing buttons ---
+  document.getElementById('plan-free-button')?.addEventListener('click', () => selectPlan('free'));
+  document.getElementById('plan-starter-button')?.addEventListener('click', () => selectPlan('starter'));
+  document.getElementById('plan-professional-button')?.addEventListener('click', () => selectPlan('professional'));
+  document.getElementById('plan-enterprise-button')?.addEventListener('click', () => selectPlan('enterprise'));
+
+  // --- Dashboard quick actions ---
+  document.getElementById('create-new-chatbot-button')?.addEventListener('click', () => showModal('create-chatbot'));
+  document.getElementById('create-new-chatbot-button-2')?.addEventListener('click', () => showModal('create-chatbot'));
+  document.getElementById('view-all-chatbots-button')?.addEventListener('click', (e) => { e.preventDefault(); showDashboardSection('chatbots'); });
+  document.getElementById('view-analytics-button')?.addEventListener('click', (e) => { e.preventDefault(); showDashboardSection('analytics'); });
+
+  // --- Verification buttons ---
+  document.getElementById('verification-login-button')?.addEventListener('click', () => { hideEmailVerificationPage(); showModal('login'); });
+  document.getElementById('verification-home-button')?.addEventListener('click', () => { hideEmailVerificationPage(); });
+
+  // --- Modal close (X) ---
+  document.querySelectorAll('.modal-close').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const modal = e.target.closest('.modal');
+      if (modal) closeModal(modal.id.replace('-modal', ''));
+    });
+  });
+
+  // --- Modal link toggles ---
+  document.getElementById('forgot-password-link')?.addEventListener('click', (e) => { e.preventDefault(); closeModal('login'); showModal('forgot-password'); });
+  document.getElementById('login-to-register-link')?.addEventListener('click', (e) => { e.preventDefault(); closeModal('login'); showModal('register'); });
+  document.getElementById('register-to-login-link')?.addEventListener('click', (e) => { e.preventDefault(); closeModal('register'); showModal('login'); });
+  document.getElementById('forgot-password-to-login-link')?.addEventListener('click', (e) => { e.preventDefault(); closeModal('forgot-password'); showModal('login'); });
+
+  // --- Forms ---
+  document.getElementById('login-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    await login(email, password);
+  });
+
+  document.getElementById('register-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('register-email').value;
+    const company = document.getElementById('register-company').value;
+    const password = document.getElementById('register-password').value;
+    const plan = document.getElementById('register-plan').value;
+    await register(email, company, password, plan);
+  });
+
+  document.getElementById('forgot-password-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('forgot-password-email').value;
+    await forgotPassword(email);
+  });
+
+  document.getElementById('create-chatbot-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('chatbot-name').value;
+    const websiteUrl = document.getElementById('chatbot-website-url').value;
+    const sitemapUrl = document.getElementById('chatbot-sitemap-url').value;
+    const maxPages = document.getElementById('chatbot-max-pages').value;
+    const brandVoice = document.getElementById('chatbot-brand-voice').value;
+    await createChatbot(name, websiteUrl, sitemapUrl, maxPages, brandVoice);
+  });
+
+  document.getElementById('settings-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await showCustomDialog('Success', 'Settings saved successfully!');
+  });
+
+  document.getElementById('contact-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('contact-name').value;
+    const email = document.getElementById('contact-email').value;
+    const subject = document.getElementById('contact-subject').value;
+    const message = document.getElementById('contact-message').value;
+    await submitContactForm(name, email, subject, message);
+  });
+
+  // --- Misc ---
+  document.getElementById('resend-verification-button')?.addEventListener('click', resendVerification);
+  document.getElementById('copy-embed-code-button')?.addEventListener('click', copyEmbedCode);
+  document.getElementById('upgrade-starter-button')?.addEventListener('click', () => upgradePlan('starter'));
+  document.getElementById('upgrade-professional-button')?.addEventListener('click', () => upgradePlan('professional'));
+  document.getElementById('upgrade-enterprise-button')?.addEventListener('click', () => upgradePlan('enterprise'));
+
+  // Sidebar links (pass clicked element to highlight)
+  document.getElementById('sidebar-overview-link')?.addEventListener('click', (e) => { e.preventDefault(); showDashboardSection('overview', e.currentTarget); });
+  document.getElementById('sidebar-chatbots-link')?.addEventListener('click', (e) => { e.preventDefault(); showDashboardSection('chatbots', e.currentTarget); });
+  document.getElementById('sidebar-analytics-link')?.addEventListener('click', (e) => { e.preventDefault(); showDashboardSection('analytics', e.currentTarget); });
+  document.getElementById('sidebar-settings-link')?.addEventListener('click', (e) => { e.preventDefault(); showDashboardSection('settings', e.currentTarget); });
+  document.getElementById('sidebar-billing-link')?.addEventListener('click', (e) => { e.preventDefault(); showDashboardSection('billing', e.currentTarget); });
+  document.addEventListener('click', (e) => {
+    if (e.target.classList?.contains('modal')) {
+      closeModal(e.target.id.replace('-modal', ''));
+    }
+  });
+  // --- Chatbot list actions (delegation) ---
+  document.getElementById('chatbot-list')?.addEventListener('click', (e) => {
+    const button = e.target.closest('button');
+    if (!button) return;
+
+    const chatbotItem = e.target.closest('.chatbot-item');
+    if (!chatbotItem) return;
+
+    const chatbotId = chatbotItem.dataset.chatbotId;
+
+    if (button.classList.contains('action-embed')) {
+      showEmbedCode(chatbotId);
+    } else if (button.classList.contains('action-analytics')) {
+      viewAnalytics(chatbotId);
+    } else if (button.classList.contains('action-delete')) {
+      deleteChatbot(chatbotId);
+    }
+  });
+
+  // --- Close modals by clicking outside content ---
+  document.addEventListener('click', (e) => {
+    if (e.target.classList?.contains('modal')) {
+      const modalId = e.target.id.replace('-modal', '');
+      closeModal(modalId);
+    }
+  });
+}
+
+function showLandingPageKeepAuth() {
+  // Show marketing sections, but keep hero hidden if logged in
+  const loggedIn = !!window.authToken;
+
+  document.getElementById('dashboard').classList.remove('active');
+  document.getElementById('verification-section').classList.remove('active');
+
+  // hero visibility
+  document.getElementById('hero')?.classList.toggle('hidden', loggedIn);
+  // marketing content (features/pricing/contact)
+  document.getElementById('main-content')?.classList.remove('hidden');
+
+  // header state
+  document.getElementById('auth-buttons')?.classList.toggle('hidden', loggedIn);
+  document.getElementById('user-menu')?.classList.toggle('hidden', !loggedIn);
+
+  // show/hide Dashboard nav item
+  document.getElementById('dashboard-nav-item')?.classList.toggle('hidden', !loggedIn);
+}
+
+function createPasswordResetSection() {
+  const resetSection = document.createElement('section');
+  resetSection.id = 'password-reset-section';
+  resetSection.className = 'verification-section';
+  resetSection.innerHTML = `
+    <div class="verification-card">
+      <div class="verification-icon">
+        <i class="fas fa-key"></i>
+      </div>
+      <h2>Reset Your Password</h2>
+      <p>Enter your new password below:</p>
+      <form id="reset-password-form" style="margin-top: 2rem;">
+        <div class="form-group">
+          <label class="form-label">New Password</label>
+          <input type="password" class="form-input" id="reset-new-password" required minlength="6">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm New Password</label>
+          <input type="password" class="form-input" id="reset-confirm-password" required minlength="6">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%;">
+          <i class="fas fa-save"></i> Reset Password
+        </button>
+      </form>
+      <div style="margin-top: 2rem;">
+        <button class="btn btn-outline" id="reset-back-to-login">
+          <i class="fas fa-arrow-left"></i> Back to Login
+        </button>
+      </div>
+    </div>
+  `;
+  return resetSection;
+}
+
+function showPasswordResetPage() {
+  // hide everything else
+  document.getElementById('hero')?.classList.add('hidden');
+  document.getElementById('main-content')?.classList.add('hidden');
+  document.getElementById('dashboard')?.classList.remove('active');
+  document.getElementById('verification-section')?.classList.remove('active');
+
+  // inject/reset section if needed
+  let section = document.getElementById('password-reset-section');
+  if (!section) {
+    section = createPasswordResetSection();
+    document.body.appendChild(section);
+  }
+  section.classList.add('active');
+
+  // wire up once
+  const form = section.querySelector('#reset-password-form');
+  if (!form.dataset.bound) {
+    form.dataset.bound = '1';
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('reset_token');
+      const newPass = section.querySelector('#reset-new-password').value;
+      const confirmPass = section.querySelector('#reset-confirm-password').value;
+
+      if (newPass !== confirmPass) {
+        await showCustomDialog('Error', 'Passwords do not match.');
+        return;
+      }
+      await resetPassword(token, newPass);
+    });
+
+    section.querySelector('#reset-back-to-login')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      // clean URL and show login
+      const url = new URL(window.location.href);
+      url.searchParams.delete('reset_token');
+      history.replaceState({}, '', '/');
+      showLandingPage();  // or showLandingPageKeepAuth() if you prefer
+      showModal('login');
+    });
+  }
+}
+
+async function resetPassword(token, newPassword) {
+  try {
+    const res = await fetch(`${window.API_BASE_URL}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, new_password: newPassword })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      await showCustomDialog('Password Reset', 'Your password has been updated. Please log in.');
+      // clean query and go to login
+      const url = new URL(window.location.href);
+      url.searchParams.delete('reset_token');
+      history.replaceState({}, '', '/');
+      showLandingPage();
+      showModal('login');
+    } else {
+      await showCustomDialog('Error', data.detail || 'The reset link is invalid or has expired.');
+    }
+  } catch (err) {
+    console.error('Password reset error:', err);
+    await showCustomDialog('Network Error', 'Unable to reset password. Please try again.');
+  }
+}
+
+
+
+function initializeApp() {
+  console.log('Initializing app');
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const verificationToken = urlParams.get('token');
+  const resetToken = urlParams.get('reset_token');
+  const isResetPath = window.location.pathname.includes('reset-password');
+
+  if (resetToken || isResetPath) {
+    // Password reset deep-link
+    showPasswordResetPage();
+  } else if (verificationToken) {
+    // Email verification deep-link
+    showEmailVerificationPage();
+    verifyEmail(verificationToken);
+  } else {
+    // Normal load: init session
+    window.authToken = localStorage.getItem('authToken');
+    if (window.authToken) {
+      verifyToken();
+    } else {
+      showLandingPage();
+    }
+  }
+
+  // Show the app now that initial route is decided
+  document.getElementById('loading-overlay').classList.add('hidden');
+  document.getElementById('app-container').classList.remove('hidden');
+
+  setupEventHandlers();
+  observeElements();
+}
+
+
+        document.addEventListener('DOMContentLoaded', initializeApp);
     </script>
 </body>
 </html>

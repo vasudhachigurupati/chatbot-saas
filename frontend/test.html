@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Widget Test Page</title>
+    <style>
+        /* Optional: Add some basic styling to make the page visible */
+        body {
+            font-family: sans-serif;
+            margin: 50px;
+            min-height: 800px; /* Make the page long enough to scroll */
+            background-color: #f0f4f8;
+            color: #333;
+        }
+        h1 {
+            color: #667eea;
+        }
+        p {
+            max-width: 600px;
+            line-height: 1.6;
+        }
+        .content-block {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Welcome to our Test Website</h1>
+    <p>This is a simple HTML page to test the integration of your AI-powered chatbot widget. If everything is configured correctly, you should see a chatbot icon appear at the bottom right of this screen.</p>
+    <p>You can interact with the chatbot, and it should respond based on the content it scraped from your configured website (or provide a default "I don't know" message if it hasn't been trained yet).</p>
+
+    <div class="content-block">
+        <h2>Product Information</h2>
+        <p>Our flagship product, the "Quantum Leap Widget," offers unparalleled performance and efficiency. It integrates seamlessly with existing systems and requires minimal setup. For detailed specifications, please refer to our main website.</p>
+        <p>We also provide a comprehensive support package, including 24/7 online assistance and a dedicated knowledge base. Our pricing plans are flexible, designed to cater to businesses of all sizes, from startups to large enterprises.</p>
+    </div>
+
+    <div class="content-block">
+        <h2>Company History</h2>
+        <p>Founded in 2020, our company has quickly grown to become a leader in AI solutions. We pride ourselves on innovation and customer satisfaction. Our mission is to democratize AI, making powerful tools accessible to everyone.</p>
+    </div>
+
+
+
+
+<div id="chatbot-widget-28"></div>
+<script>
+    (function() {
+        var script = document.createElement('script');
+        script.src = 'http://localhost:8000/widget.js';
+        script.async = true;
+        script.onload = function() {
+            window.ChatbotWidget.init({
+                chatbotId: '28',
+                apiKey: 'cb_pQfJhED4_9wd5ThC7TWlJOogJzISfB_DFqqVyF1PkEk',
+                apiUrl: 'http://localhost:8000'
+            });
+        };
+        document.head.appendChild(script);
+    })();
+</script>
+
+
+
+
+    <p style="margin-top: 50px;">Scroll down to see the chatbot widget!</p>
+    <div style="height: 500px;"></div> </body>
+</html>

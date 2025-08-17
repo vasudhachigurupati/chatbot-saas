@@ -2,21 +2,30 @@ import os
 import asyncio
 import aiohttp
 import sqlite3
+import smtplib
+import secrets
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import warnings
 import logging
 import json
 import re
 import xml.etree.ElementTree as ET
+import contextlib
 
 # Third-party imports
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, status, Form, BackgroundTasks, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi import HTTPException, Depends
+from fastapi import BackgroundTasks
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from passlib.context import CryptContext
 from jose import JWTError, jwt
@@ -24,6 +33,7 @@ from bs4 import BeautifulSoup
 from urllib.robotparser import RobotFileParser
 from urllib.parse import urljoin, urlparse
 from groq import Groq
+from fastapi.middleware.cors import CORSMiddleware
 from decouple import config
 
 # Configuration
@@ -36,6 +46,51 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 GROQ_API_KEY = config("GROQ_API_KEY")
 DATABASE_NAME = "chatbot_saas.db"
+
+# Email Configuration
+SMTP_SERVER = config("SMTP_SERVER", default="")
+SMTP_PORT = int(config("SMTP_PORT", default="587"))
+SMTP_USERNAME = config("SMTP_USERNAME", default="")
+SMTP_PASSWORD = config("SMTP_PASSWORD", default="")
+FROM_EMAIL = config("FROM_EMAIL", default=SMTP_USERNAME)
+CONTACT_RECIPIENT = config("CONTACT_RECIPIENT", default=FROM_EMAIL)
+#FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5173")
+FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5173")
+BACKEND_API_BASE_URL = config("BACKEND_API_BASE_URL", default="http://localhost:8000")
+
+
+
+# Subscription Plans
+SUBSCRIPTION_PLANS = {
+    "free": {
+        "name": "Free Plan",
+        "max_chatbots": 1,
+        "max_pages_per_bot": 10,
+        "max_conversations_per_month": 100,
+        "price": 0
+    },
+    "starter": {
+        "name": "Starter Plan",
+        "max_chatbots": 3,
+        "max_pages_per_bot": 50,
+        "max_conversations_per_month": 1000,
+        "price": 29
+    },
+    "professional": {
+        "name": "Professional Plan",
+        "max_chatbots": 10,
+        "max_pages_per_bot": 200,
+        "max_conversations_per_month": 5000,
+        "price": 99
+    },
+    "enterprise": {
+        "name": "Enterprise Plan",
+        "max_chatbots": -1,  # Unlimited
+        "max_pages_per_bot": 1000,
+        "max_conversations_per_month": -1,  # Unlimited
+        "price": 299
+    }
+}
 
 # Initialize services
 groq_client = Groq(api_key=GROQ_API_KEY)
@@ -55,7 +110,7 @@ def init_database():
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
     
-    # Users table
+    # Users table with enhanced fields
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,12 +118,19 @@ def init_database():
         hashed_password TEXT NOT NULL,
         company_name TEXT NOT NULL,
         plan TEXT NOT NULL DEFAULT 'free',
-        is_active BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        is_active BOOLEAN DEFAULT FALSE,
+        is_verified BOOLEAN DEFAULT FALSE,
+        verification_token TEXT,
+        verification_expires TIMESTAMP,
+        reset_token TEXT,
+        reset_expires TIMESTAMP,
+        subscription_expires TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
 
-    # Chatbots table
+    # Enhanced chatbots table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS chatbots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,11 +143,15 @@ def init_database():
         system_prompt TEXT,
         is_active BOOLEAN DEFAULT 1,
         status TEXT NOT NULL DEFAULT 'pending',
+        embed_code TEXT,
+        api_key TEXT UNIQUE,
+        widget_settings TEXT DEFAULT '{}',
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         last_trained TIMESTAMP,
         total_conversations INTEGER NOT NULL DEFAULT 0,
-        settings TEXT NOT NULL DEFAULT '{}',
+        monthly_conversations INTEGER NOT NULL DEFAULT 0,
+        last_conversation_reset TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users (id)
     )
     """)
@@ -100,11 +166,11 @@ def init_database():
         content TEXT,
         metadata TEXT,
         crawled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (chatbot_id) REFERENCES chatbots (id)
+        FOREIGN KEY (chatbot_id) REFERENCES chatbots (id) ON DELETE CASCADE
     )
     """)
     
-    # Conversations table
+    # Enhanced conversations table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS conversations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,8 +179,10 @@ def init_database():
         user_message TEXT NOT NULL,
         bot_response TEXT NOT NULL,
         response_time_ms INTEGER,
+        user_ip TEXT,
+        user_agent TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (chatbot_id) REFERENCES chatbots (id)
+        FOREIGN KEY (chatbot_id) REFERENCES chatbots (id) ON DELETE CASCADE
     )
     """)
     
@@ -126,13 +194,103 @@ def init_database():
         event_type TEXT NOT NULL,
         event_data TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (chatbot_id) REFERENCES chatbots (id)
+        FOREIGN KEY (chatbot_id) REFERENCES chatbots (id) ON DELETE CASCADE
     )
     """)
+
+    # Usage tracking table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS usage_tracking (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        resource_type TEXT NOT NULL,
+        usage_count INTEGER DEFAULT 1,
+        period_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        period_end TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    )
+    """)
+
+
+    # Contact messages table
+    # Contact messages table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS contact_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        message TEXT NOT NULL,
+        user_id INTEGER,
+        company_name TEXT,
+        status TEXT NOT NULL DEFAULT 'new',
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_contact_messages_created_at ON contact_messages(created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_contact_messages_status ON contact_messages(status)")
+
+
+
     
     conn.commit()
     conn.close()
     logger.info("Database initialized successfully")
+
+
+def get_db_connection():
+    """Returns a new SQLite connection."""
+    conn = sqlite3.connect(DATABASE_NAME)
+    conn.row_factory = sqlite3.Row # Allows accessing columns by name
+    return conn
+
+@contextlib.contextmanager
+def get_db():
+    """Provides a database connection that automatically closes."""
+    conn = get_db_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+# Email utility functions
+def send_email(to_email: str, subject: str, body: str, is_html: bool = False, reply_to: str | None = None):
+    if not all([SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, FROM_EMAIL]):
+        logger.error("Email configuration is incomplete.")
+        return False
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = FROM_EMAIL
+        msg['To'] = to_email
+        msg['Subject'] = subject
+        if reply_to:
+            msg.add_header('Reply-To', reply_to)
+        msg.attach(MIMEText(body, 'html' if is_html else 'plain'))
+
+        with smtplib.SMTP(SMTP_SERVER, int(SMTP_PORT)) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD.replace(" ", ""))  # strip spaces
+            server.sendmail(FROM_EMAIL, [to_email], msg.as_string())
+
+        logger.info(f"Email sent to {to_email}")
+        return True
+    except Exception as e:
+        logger.exception(f"Email send failed to {to_email}: {e}")
+        return False
+
+
+
+
+def generate_verification_token():
+    """Generate a secure verification token"""
+    return secrets.token_urlsafe(32)
+
+def generate_api_key():
+    """Generate a unique API key for chatbot"""
+    return f"cb_{secrets.token_urlsafe(32)}"
 
 # Pydantic models
 class UserCreate(BaseModel):
@@ -144,19 +302,40 @@ class UserCreate(BaseModel):
     @field_validator('plan')
     @classmethod
     def validate_plan(cls, v):
-        if v not in ['free', 'premium', 'enterprise']:
-            raise ValueError('Plan must be one of: free, premium, enterprise')
+        if v not in SUBSCRIPTION_PLANS.keys():
+            raise ValueError(f'Plan must be one of: {", ".join(SUBSCRIPTION_PLANS.keys())}')
         return v
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class EmailVerification(BaseModel):
+    token: str
+
+class PasswordReset(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6)
+
+class ContactForm(BaseModel):
+    name: str
+    email: EmailStr
+    subject: str
+    message: str
+    user_id: Optional[int] = None # Added for logged-in users
+
+class ResetPasswordForm(BaseModel):
+    token: str
+    new_password: str
+
 class ChatbotCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     website_url: str
     sitemap_url: Optional[str] = None
-    max_pages: int = Field(default=10, ge=1, le=100)
+    max_pages: int = Field(default=10, ge=1, le=1000)
     brand_voice: str = Field(default="friendly")
     
     @field_validator('website_url')
@@ -177,14 +356,11 @@ class ChatMessage(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     session_id: str
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-class ChatbotUpdate(BaseModel):
-    name: Optional[str] = None
-    brand_voice: Optional[str] = None
-    max_pages: Optional[int] = None
+class WidgetSettings(BaseModel):
+    primary_color: str = Field(default="#667eea")
+    position: str = Field(default="bottom-right")
+    greeting_message: str = Field(default="Hello! How can I help you?")
+    placeholder_text: str = Field(default="Type your message...")
 
 # Utility functions
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -215,22 +391,77 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     # Get user from database
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    cursor.execute("SELECT * FROM users WHERE id = ? AND is_active = 1 AND is_verified = 1", (user_id,))
     user = cursor.fetchone()
     conn.close()
     
     if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(status_code=401, detail="User not found or not verified")
     
     return {
         "id": user[0],
         "email": user[1],
         "company_name": user[3],
         "plan": user[4],
-        "is_active": user[5]
+        "is_active": user[5],
+        "is_verified": user[6],
+        "subscription_expires": user[11]
     }
 
-# Optimized WebScraper Class
+def check_usage_limits(user: Dict, resource_type: str, current_usage: int = 0) -> bool:
+    """Check if user has exceeded usage limits"""
+    plan_limits = SUBSCRIPTION_PLANS.get(user["plan"], SUBSCRIPTION_PLANS["free"])
+    
+    if resource_type == "chatbots":
+        max_allowed = plan_limits["max_chatbots"]
+        return max_allowed == -1 or current_usage < max_allowed
+    elif resource_type == "pages":
+        max_allowed = plan_limits["max_pages_per_bot"]
+        return max_allowed == -1 or current_usage <= max_allowed
+    elif resource_type == "conversations":
+        max_allowed = plan_limits["max_conversations_per_month"]
+        return max_allowed == -1 or current_usage < max_allowed
+    
+    return True
+
+# main.py
+
+def update_conversation_count(chatbot_id: int, conn: sqlite3.Connection):
+    """Update monthly conversation count and reset if needed"""
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT monthly_conversations, last_conversation_reset 
+        FROM chatbots WHERE id = ?
+    """, (chatbot_id,))
+    
+    result = cursor.fetchone()
+    if result:
+        monthly_count, last_reset = result
+        last_reset_date = datetime.fromisoformat(last_reset)
+        current_date = datetime.now()
+        
+        if (current_date.year != last_reset_date.year or 
+            current_date.month != last_reset_date.month):
+            monthly_count = 0
+            cursor.execute("""
+                UPDATE chatbots 
+                SET monthly_conversations = 0, last_conversation_reset = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (chatbot_id,))
+            
+        cursor.execute("""
+            UPDATE chatbots 
+            SET total_conversations = total_conversations + 1,
+                monthly_conversations = monthly_conversations + 1
+            WHERE id = ?
+        """, (chatbot_id,))
+        
+        conn.commit()
+        return monthly_count + 1
+    return 0
+
+
 class WebScraper:
     def __init__(self, max_pages: int = 10):
         self.max_pages = max_pages
@@ -299,7 +530,6 @@ class WebScraper:
                     main_content = content_elem.get_text()
                     break
             
-            # Fallback to body if no main content found
             if not main_content:
                 body = soup.find('body')
                 main_content = body.get_text() if body else soup.get_text()
@@ -418,7 +648,7 @@ class WebScraper:
         if sitemap_url:
             logger.info("Attempting to use sitemap")
             urls = await self.get_urls_from_sitemap(sitemap_url)
-            
+        
         # Fall back to crawling if no sitemap or sitemap failed
         if not urls:
             logger.info("Falling back to URL discovery by crawling")
@@ -457,7 +687,6 @@ class WebScraper:
         logger.info(f"Successfully scraped {len(scraped_data)} pages")
         return scraped_data
 
-# AI Response Generation
 def generate_system_prompt(brand_voice: str, website_content: List[Dict]) -> str:
     """Generate system prompt based on content and brand voice"""
     voice_instructions = {
@@ -467,7 +696,6 @@ def generate_system_prompt(brand_voice: str, website_content: List[Dict]) -> str
         "technical": "You are a technical expert. Use precise terminology, provide detailed explanations, and focus on accuracy and technical depth."
     }
     
-    # Summarize website content (top 5 pages)
     content_summary = []
     for content in website_content[:5]:
         content_summary.append(f"Page: {content['title']}\nContent: {content['content'][:500]}...")
@@ -490,7 +718,6 @@ async def generate_ai_response(message: str, system_prompt: str, conversation_hi
     try:
         messages = [{"role": "system", "content": system_prompt}]
         
-        # Add recent conversation history
         if conversation_history:
             for conv in conversation_history[-5:]:
                 messages.append({"role": "user", "content": conv["user_message"]})
@@ -511,14 +738,11 @@ async def generate_ai_response(message: str, system_prompt: str, conversation_hi
         logger.error(f"Error generating AI response: {e}")
         return "I apologize, but I'm having trouble processing your request right now. Please try again later."
 
-# Background task for website processing
 async def process_website(chatbot_id: int, chatbot_data: ChatbotCreate):
-    """Background task to scrape website and set up chatbot"""
     try:
         logger.info(f"Starting to process chatbot {chatbot_id}")
         
         async with WebScraper(max_pages=chatbot_data.max_pages) as scraper:
-            # Get URLs to scrape (unified method)
             urls_to_scrape = await scraper.get_urls_to_scrape(
                 chatbot_data.website_url, 
                 chatbot_data.sitemap_url
@@ -527,59 +751,57 @@ async def process_website(chatbot_id: int, chatbot_data: ChatbotCreate):
             if not urls_to_scrape:
                 raise Exception("No URLs could be discovered for scraping")
             
-            # Scrape content from URLs
             scraped_content = await scraper.scrape_content_from_urls(urls_to_scrape)
             
             if not scraped_content:
                 raise Exception("No content could be scraped from the website")
         
-        # Save to database
-        conn = sqlite3.connect(DATABASE_NAME)
-        cursor = conn.cursor()
-        
-        try:
-            # Save scraped content
-            for content in scraped_content:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            try:
+                cursor.execute("DELETE FROM website_content WHERE chatbot_id = ?", (chatbot_id,))
+                
+                for content in scraped_content:
+                    cursor.execute("""
+                        INSERT INTO website_content (chatbot_id, url, title, content, metadata)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (
+                        chatbot_id,
+                        content["url"],
+                        content["title"],
+                        content["content"],
+                        json.dumps({
+                            "description": content["description"],
+                            "headings": content["headings"],
+                            "word_count": content["word_count"]
+                        })
+                    ))
+                
+                system_prompt = generate_system_prompt(chatbot_data.brand_voice, scraped_content)
+                api_key = generate_api_key()
+                embed_code = generate_embed_code(chatbot_id, api_key)
+                
                 cursor.execute("""
-                    INSERT INTO website_content (chatbot_id, url, title, content, metadata)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    chatbot_id,
-                    content["url"],
-                    content["title"],
-                    content["content"],
-                    json.dumps({
-                        "description": content["description"],
-                        "headings": content["headings"],
-                        "word_count": content["word_count"]
-                    })
-                ))
-            
-            # Generate and save system prompt
-            system_prompt = generate_system_prompt(chatbot_data.brand_voice, scraped_content)
-            
-            cursor.execute("""
                 UPDATE chatbots 
-                SET system_prompt = ?, status = 'active', updated_at = CURRENT_TIMESTAMP, last_trained = CURRENT_TIMESTAMP
+                SET system_prompt = ?, status = 'active', updated_at = CURRENT_TIMESTAMP, 
+                    last_trained = CURRENT_TIMESTAMP, api_key = ?, embed_code = ?
                 WHERE id = ?
-            """, (system_prompt, chatbot_id))
+                """, (system_prompt, api_key, embed_code, chatbot_id))
+                
+                conn.commit()
+                logger.info(f"✅ Chatbot {chatbot_id} processed successfully with {len(scraped_content)} pages")
+                
+            except Exception as db_error:
+                conn.rollback()
+                logger.error(f"Database error for chatbot {chatbot_id}: {db_error}")
+                raise
             
-            conn.commit()
-            logger.info(f"✅ Chatbot {chatbot_id} processed successfully with {len(scraped_content)} pages")
-            
-        except Exception as db_error:
-            logger.error(f"Database error for chatbot {chatbot_id}: {db_error}")
-            raise
-        finally:
-            conn.close()
-        
     except Exception as e:
         error_msg = str(e)
         logger.error(f"❌ Error processing chatbot {chatbot_id}: {error_msg}")
         
-        # Update status to failed
-        try:
-            conn = sqlite3.connect(DATABASE_NAME)
+        with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE chatbots 
@@ -587,39 +809,53 @@ async def process_website(chatbot_id: int, chatbot_data: ChatbotCreate):
                 WHERE id = ?
             """, (chatbot_id,))
             conn.commit()
-            conn.close()
-        except Exception as db_error:
-            logger.error(f"Failed to update chatbot status: {db_error}")
 
-# Lifespan management
+def generate_embed_code(chatbot_id: int, api_key: str) -> str:
+    """Generate embed code for the chatbot widget"""
+    return f"""
+<div id="chatbot-widget-{chatbot_id}"></div>
+<script>
+    (function() {{
+        var script = document.createElement('script');
+        script.src = '{BACKEND_API_BASE_URL}/widget.js';
+        script.async = true;
+        script.onload = function() {{
+            window.ChatbotWidget.init({{
+                chatbotId: '{chatbot_id}',
+                apiKey: '{api_key}',
+                apiUrl: '{BACKEND_API_BASE_URL}'
+            }});
+        }};
+        document.head.appendChild(script);
+    }})();
+</script>
+"""
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    logger.info("🚀 Universal Website Chatbot API is starting up...")
+    logger.info("🚀 Enhanced Chatbot SaaS API is starting up...")
     init_database()
     logger.info("📊 Database initialized successfully!")
     yield
-    # Shutdown
     logger.info("👋 Shutting down...")
 
-# FastAPI app
 app = FastAPI(
-    title="Universal Website Chatbot API",
+    title="Enhanced Chatbot SaaS API",
     description="A comprehensive SaaS platform for creating intelligent chatbots from any website",
-    version="2.0.0",
+    version="3.0.0",
     lifespan=lifespan
 )
 
-# CORS middleware
+allowed = os.getenv("ALLOWED_ORIGINS", FRONTEND_URL).split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in allowed if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Middleware for request/response logging
 @app.middleware("http")
 async def logging_middleware(request: Request, call_next):
     start_time = datetime.now()
@@ -632,22 +868,26 @@ async def logging_middleware(request: Request, call_next):
     
     return response
 
-# API Routes
-
 @app.get("/")
 async def root():
     return {
-        "message": "🤖 Universal Website Chatbot API",
-        "version": "2.0.0",
+        "message": "🤖 Enhanced Chatbot SaaS API",
+        "version": "3.0.0",
         "docs": "/docs",
-        "status": "active"
+        "status": "active",
+        "features": [
+            "Email verification",
+            "Subscription plans",
+            "Usage tracking",
+            "Embeddable widgets",
+            "API access"
+        ]
     }
 
 @app.get("/health")
 async def health_check():
     """Enhanced health check"""
     try:
-        # Test database connection
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
@@ -656,678 +896,1013 @@ async def health_check():
     except Exception as e:
         db_status = f"error: {str(e)}"
     
+    email_configured = bool(SMTP_USERNAME and SMTP_PASSWORD)
+    
     return {
         "status": "healthy" if db_status == "healthy" else "unhealthy",
         "timestamp": datetime.now().isoformat(),
         "database": db_status,
-        "version": "2.0.0"
+        "email_configured": email_configured,
+        "version": "3.0.0"
     }
 
-# Authentication endpoints
 @app.post("/auth/register", response_model=dict)
-async def register(user_data: UserCreate):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        # Check if user exists
-        cursor.execute("SELECT id FROM users WHERE email = ?", (user_data.email,))
-        if cursor.fetchone():
-            raise HTTPException(status_code=400, detail="Email already registered")
+async def register(user_data: UserCreate, background_tasks: BackgroundTasks):
+    # Fix: Ensure a fresh connection for this thread to prevent "database is locked"
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-        # Create user
-        hashed_password = get_password_hash(user_data.password)
-        cursor.execute("""
-            INSERT INTO users (email, hashed_password, company_name, plan)
-            VALUES (?, ?, ?, ?)
-        """, (user_data.email, hashed_password, user_data.company_name, user_data.plan))
-        
-        user_id = cursor.lastrowid
-        conn.commit()
-        
-        logger.info(f"New user registered: {user_data.email} (ID: {user_id})")
-        
-        return {
-            "message": "User created successfully",
-            "user_id": user_id,
-            "email": user_data.email
-        }
-    finally:
-        conn.close()
+        try:
+            cursor.execute("SELECT id FROM users WHERE email = ?", (user_data.email,))
+            if cursor.fetchone():
+                raise HTTPException(status_code=400, detail="Email already registered")
+            
+            verification_token = generate_verification_token()
+            verification_expires = datetime.now() + timedelta(hours=24)
+            
+            hashed_password = get_password_hash(user_data.password)
+            cursor.execute("""
+                INSERT INTO users (email, hashed_password, company_name, plan,
+                                 verification_token, verification_expires)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_data.email, 
+                  hashed_password,
+                  user_data.company_name, 
+                  user_data.plan,
+                  verification_token, 
+                  verification_expires.isoformat()))
+            
+            user_id = cursor.lastrowid
+            conn.commit()
+            
+            # Start email sending as a background task
+            verification_link = f"{FRONTEND_URL}/?token={verification_token}"
+            email_body = f"""
+            <html>
+            <body>
+                <h2>Welcome to Chatbot SaaS!</h2>
+                <p>Hi there,</p>
+                <p>Thank you for registering with us. Please click the link below to verify your email address:</p>
+                <p><a href="{verification_link}" style="background-color: #667eea; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Verify Email</a></p>
+                <p>This link will expire in 24 hours.</p>
+                <p>If you didn't create this account, please ignore this email.</p>
+                <p>Best regards,<br>The Chatbot SaaS Team</p>
+            </body>
+            </html>
+            """
+            
+            # Note: This is an important part of the fix. The DB transaction is already committed.
+            # The background task for sending email won't interfere with the DB lock.
+            background_tasks.add_task(send_email, user_data.email, "Verify Your Email - Chatbot SaaS", email_body, is_html=True)
+            
+            logger.info(f"New user registered: {user_data.email} (ID: {user_id})")
+            
+            return {
+                "message": "Account created successfully. Please check your email to verify your account.",
+                "user_id": user_id,
+                "email": user_data.email
+            }
+        except HTTPException:
+            conn.rollback()
+            raise
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error during user registration: {e}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Registration failed due to an internal error.")
 
-@app.post("/auth/login", response_model=Token)
+
+@app.post("/auth/verify-email")
+async def verify_email(verification_data: EmailVerification):
+    with get_db() as conn: # <--- CHANGED
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                SELECT id, email, verification_expires FROM users 
+                WHERE verification_token = ? AND is_verified = 0
+            """, (verification_data.token,))
+            
+            user = cursor.fetchone()
+            if not user:
+                raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+            
+            # Check if token is expired
+            expires_at = datetime.fromisoformat(user[2])
+            if datetime.now() > expires_at:
+                raise HTTPException(status_code=400, detail="Verification token has expired")
+            
+            # Verify user
+            cursor.execute("""
+                UPDATE users 
+                SET is_verified = 1, is_active = 1, verification_token = NULL, 
+                    verification_expires = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (user[0],))
+            
+            conn.commit() # <--- COMMIT HERE
+            
+            logger.info(f"User verified: {user[1]} (ID: {user[0]})")
+            
+            return {"message": "Email verified successfully. You can now log in."}
+        except Exception as e:
+            conn.rollback()
+            raise e
+
+
+@app.post("/auth/resend-verification")
+async def resend_verification(email_data: dict, background_tasks: BackgroundTasks):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        try:
+            email = email_data.get("email")
+            cursor.execute("""
+                SELECT id FROM users 
+                WHERE email = ? AND is_verified = 0
+            """, (email,))
+            
+            user = cursor.fetchone()
+            if not user:
+                raise HTTPException(status_code=400, detail="User not found or already verified")
+            
+            verification_token = generate_verification_token()
+            verification_expires = datetime.now() + timedelta(hours=24)
+            
+            cursor.execute("""
+                UPDATE users 
+                SET verification_token = ?, verification_expires = ?
+                WHERE id = ?
+            """, (verification_token, verification_expires.isoformat(), user[0]))
+            
+            conn.commit()
+            
+            verification_link = f"{FRONTEND_URL}/verify-email?token={verification_token}"
+            email_body = f"""
+            <html>
+            <body>
+                <h2>Email Verification - Chatbot SaaS</h2>
+                <p>Hi there,</p>
+                <p>You requested a new verification link. Please click the link below:</p>
+                <p><a href="{verification_link}" style="background-color: #667eea; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Verify Email</a></p>
+                <p>This link will expire in 24 hours.</p>
+            </body>
+            </html>
+            """
+            
+            background_tasks.add_task(send_email, email, "New Verification Link - Chatbot SaaS", email_body, is_html=True)
+            
+            return {"message": "Verification email sent successfully"}
+        except HTTPException:
+            conn.rollback()
+            raise
+        except Exception as e:
+            conn.rollback()
+            raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/auth/login", response_model=dict)
 async def login(username: str = Form(...), password: str = Form(...)):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        cursor.execute("SELECT id, email, hashed_password FROM users WHERE email = ?", (username,))
-        user = cursor.fetchone()
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-        if not user or not verify_password(password, user[2]):
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+        try:
+            cursor.execute("""
+                SELECT id, email, hashed_password, is_verified, is_active 
+                FROM users WHERE email = ?
+            """, (username,))
+            user = cursor.fetchone()
+            
+            if not user or not verify_password(password, user[2]):
+                raise HTTPException(status_code=401, detail="Invalid credentials")
+            
+            if not user[3]:
+                raise HTTPException(status_code=401, detail="Please verify your email address first")
+            
+            if not user[4]:
+                raise HTTPException(status_code=401, detail="Account is deactivated")
+            
+            access_token = create_access_token(data={"sub": str(user[0]), "email": user[1]})
+            
+            logger.info(f"User logged in: {user[1]} (ID: {user[0]})")
+            
+            return {
+                "access_token": access_token,
+                "token_type": "bearer",
+                "user": {
+                    "id": user[0],
+                    "email": user[1]
+                }
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/auth/forgot-password")
+async def forgot_password(reset_data: PasswordReset, background_tasks: BackgroundTasks):
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-        access_token = create_access_token(data={"sub": str(user[0]), "email": user[1]})
+        try:
+            cursor.execute("SELECT id FROM users WHERE email = ? AND is_verified = 1", (reset_data.email,))
+            user = cursor.fetchone()
+            
+            # This check is crucial for security. We don't want to leak whether an email exists.
+            if not user:
+                # Return a generic success message even if the user doesn't exist
+                # to prevent email enumeration attacks.
+                return {"message": "If the email exists, a reset link has been sent."}
+            
+            reset_token = generate_verification_token()
+            reset_expires = datetime.now() + timedelta(hours=2)
+            
+            cursor.execute("""
+                UPDATE users 
+                SET reset_token = ?, reset_expires = ?
+                WHERE id = ?
+            """, (reset_token, reset_expires.isoformat(), user[0]))
+            
+            conn.commit()
+            
+            # --- CORRECTED LINE FOR THE RESET LINK ---
+            # This uses the 'reset_token' parameter name, matching your frontend's logic.
+            reset_link = f"{FRONTEND_URL}/reset-password?reset_token={reset_token}"
+            
+            email_body = f"""
+            <html>
+            <body>
+                <h2>Password Reset - Chatbot SaaS</h2>
+                <p>Hi there,</p>
+                <p>You requested a password reset. Click the link below to reset your password:</p>
+                <p><a href="{reset_link}" style="background-color: #667eea; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset Password</a></p>
+                <p>This link will expire in 2 hours.</p>
+                <p>If you didn't request this, please ignore this email.</p>
+            </body>
+            </html>
+            """
+            
+            background_tasks.add_task(send_email, reset_data.email, "Password Reset - Chatbot SaaS", email_body, is_html=True)
+            
+            return {"message": "If the email exists, a reset link has been sent."}
+            
+        except HTTPException:
+            conn.rollback()
+            raise
+        except Exception as e:
+            conn.rollback()
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/auth/reset-password")
+async def reset_password(reset_data: PasswordResetConfirm):
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-        logger.info(f"User logged in: {user[1]} (ID: {user[0]})")
-        
-        return {
-            "access_token": access_token,
-            "token_type": "bearer"
-        }
-    finally:
-        conn.close()
+        try:
+            cursor.execute("""
+                SELECT id, reset_expires FROM users 
+                WHERE reset_token = ?
+            """, (reset_data.token,))
+            
+            user = cursor.fetchone()
+            if not user:
+                raise HTTPException(status_code=400, detail="Invalid reset token")
+            
+            expires_at = datetime.fromisoformat(user[1])
+            if datetime.now() > expires_at:
+                raise HTTPException(status_code=400, detail="Reset token has expired")
+            
+            hashed_password = get_password_hash(reset_data.new_password)
+            cursor.execute("""
+                UPDATE users 
+                SET hashed_password = ?, reset_token = NULL, reset_expires = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (hashed_password, user[0]))
+            
+            conn.commit()
+            
+            return {"message": "Password reset successfully"}
+        except HTTPException:
+            conn.rollback()
+            raise
+        except Exception as e:
+            conn.rollback()
+            raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/auth/me")
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
-    return current_user
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("SELECT COUNT(*) FROM chatbots WHERE user_id = ?", (current_user["id"],))
+            chatbot_count = cursor.fetchone()[0]
+            
+            cursor.execute("""
+                SELECT SUM(monthly_conversations) FROM chatbots WHERE user_id = ?
+            """, (current_user["id"],))
+            monthly_conversations = cursor.fetchone()[0] or 0
+            
+            plan_info = SUBSCRIPTION_PLANS.get(current_user["plan"], SUBSCRIPTION_PLANS["free"])
+            
+            return {
+                **current_user,
+                "stats": {
+                    "chatbots": chatbot_count,
+                    "monthly_conversations": monthly_conversations
+                },
+                "plan_limits": plan_info,
+                "usage_percentage": {
+                    "chatbots": (chatbot_count / plan_info["max_chatbots"] * 100) if plan_info["max_chatbots"] != -1 else 0,
+                    "conversations": (monthly_conversations / plan_info["max_conversations_per_month"] * 100) if plan_info["max_conversations_per_month"] != -1 else 0
+                }
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
-# Chatbot management endpoints
 @app.post("/chatbots/create")
 async def create_chatbot(
     chatbot_data: ChatbotCreate,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user)
 ):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        cursor.execute("""
-            INSERT INTO chatbots (user_id, name, website_url, sitemap_url, max_pages, brand_voice, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'processing')
-        """, (
-            current_user["id"],
-            chatbot_data.name,
-            chatbot_data.website_url,
-            chatbot_data.sitemap_url,
-            chatbot_data.max_pages,
-            chatbot_data.brand_voice
-        ))
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-        chatbot_id = cursor.lastrowid
-        conn.commit()
-        
-        # Start background processing
-        background_tasks.add_task(process_website, chatbot_id, chatbot_data)
-        
-        logger.info(f"Chatbot created: {chatbot_data.name} (ID: {chatbot_id}) for user {current_user['id']}")
-        
-        return {
-            "id": chatbot_id,
-            "name": chatbot_data.name,
-            "status": "processing",
-            "message": "Chatbot creation started. Website scraping in progress..."
-        }
-    finally:
-        conn.close()
+        try:
+            cursor.execute("SELECT COUNT(*) FROM chatbots WHERE user_id = ?", (current_user["id"],))
+            current_count = cursor.fetchone()[0]
+            
+            if not check_usage_limits(current_user, "chatbots", current_count):
+                plan_info = SUBSCRIPTION_PLANS.get(current_user["plan"])
+                raise HTTPException(
+                    status_code=403, 
+                    detail=f"Chatbot limit reached. Your {plan_info['name']} allows {plan_info['max_chatbots']} chatbots."
+                )
+            
+            if not check_usage_limits(current_user, "pages", chatbot_data.max_pages):
+                plan_info = SUBSCRIPTION_PLANS.get(current_user["plan"])
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Page limit exceeded. Your {plan_info['name']} allows {plan_info['max_pages_per_bot']} pages per chatbot."
+                )
+            
+            cursor.execute("""
+                INSERT INTO chatbots (user_id, name, website_url, sitemap_url, max_pages, brand_voice, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'processing')
+            """, (
+                current_user["id"],
+                chatbot_data.name,
+                chatbot_data.website_url,
+                chatbot_data.sitemap_url,
+                chatbot_data.max_pages,
+                chatbot_data.brand_voice
+            ))
+            
+            chatbot_id = cursor.lastrowid
+            conn.commit()
+            
+            background_tasks.add_task(process_website, chatbot_id, chatbot_data)
+            
+            logger.info(f"Chatbot created: {chatbot_data.name} (ID: {chatbot_id}) for user {current_user['id']}")
+            
+            return {
+                "id": chatbot_id,
+                "name": chatbot_data.name,
+                "status": "processing",
+                "message": "Chatbot creation started. Website scraping in progress..."
+            }
+        except HTTPException:
+            conn.rollback()
+            raise
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error during chatbot creation: {e}")
+            raise HTTPException(status_code=500, detail="Chatbot creation failed due to an internal error.")
 
 @app.get("/chatbots/list")
 async def list_chatbots(current_user: dict = Depends(get_current_user)):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        cursor.execute("""
-            SELECT id, name, website_url, status, created_at, 
-                   (SELECT COUNT(*) FROM website_content WHERE chatbot_id = chatbots.id) as page_count
-            FROM chatbots 
-            WHERE user_id = ? 
-            ORDER BY created_at DESC
-        """, (current_user["id"],))
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-        chatbots = []
-        for row in cursor.fetchall():
-            chatbots.append({
-                "id": row[0],
-                "name": row[1],
-                "website_url": row[2],
-                "status": row[3],
-                "created_at": row[4],
-                "page_count": row[5]
-            })
-        
-        return chatbots
-    finally:
-        conn.close()
+        try:
+            cursor.execute("""
+                SELECT id, name, website_url, status, created_at, total_conversations,
+                       monthly_conversations, api_key,
+                       (SELECT COUNT(*) FROM website_content WHERE chatbot_id = chatbots.id) as page_count
+                FROM chatbots 
+                WHERE user_id = ? 
+                ORDER BY created_at DESC
+            """, (current_user["id"],))
+            
+            chatbots = []
+            for row in cursor.fetchall():
+                chatbots.append({
+                    "id": row[0],
+                    "name": row[1],
+                    "website_url": row[2],
+                    "status": row[3],
+                    "created_at": row[4],
+                    "total_conversations": row[5],
+                    "monthly_conversations": row[6],
+                    "api_key": row[7],
+                    "page_count": row[8]
+                })
+            
+            return chatbots
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/chatbots/{chatbot_id}")
 async def get_chatbot(chatbot_id: int, current_user: dict = Depends(get_current_user)):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        cursor.execute("""
-            SELECT * FROM chatbots 
-            WHERE id = ? AND user_id = ?
-        """, (chatbot_id, current_user["id"]))
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-        chatbot = cursor.fetchone()
-        if not chatbot:
-            raise HTTPException(status_code=404, detail="Chatbot not found")
-        
-        # Get content count
-        cursor.execute("SELECT COUNT(*) FROM website_content WHERE chatbot_id = ?", (chatbot_id,))
-        content_count = cursor.fetchone()[0]
-        
-        return {
-            "id": chatbot[0],
-            "name": chatbot[2],
-            "website_url": chatbot[3],
-            "sitemap_url": chatbot[4],
-            "max_pages": chatbot[5],
-            "brand_voice": chatbot[6],
-            "status": chatbot[8],
-            "created_at": chatbot[9],
-            "content_pages": content_count
-        }
-    finally:
-        conn.close()
+        try:
+            cursor.execute("""
+                SELECT * FROM chatbots 
+                WHERE id = ? AND user_id = ?
+            """, (chatbot_id, current_user["id"]))
+            
+            chatbot = cursor.fetchone()
+            if not chatbot:
+                raise HTTPException(status_code=404, detail="Chatbot not found")
+            
+            cursor.execute("SELECT COUNT(*) FROM website_content WHERE chatbot_id = ?", (chatbot_id,))
+            content_count = cursor.fetchone()[0]
+            
+            return {
+                "id": chatbot[0],
+                "name": chatbot[2],
+                "website_url": chatbot[3],
+                "sitemap_url": chatbot[4],
+                "max_pages": chatbot[5],
+                "brand_voice": chatbot[6],
+                "status": chatbot[8],
+                "created_at": chatbot[9],
+                "updated_at": chatbot[10],
+                "total_conversations": chatbot[12],
+                "monthly_conversations": chatbot[13],
+                "api_key": chatbot[15],
+                "embed_code": chatbot[11],
+                "content_pages": content_count
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
-@app.put("/chatbots/{chatbot_id}")
-async def update_chatbot(
+@app.get("/chatbots/{chatbot_id}/embed-code")
+async def get_embed_code(chatbot_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                SELECT embed_code, status FROM chatbots 
+                WHERE id = ? AND user_id = ?
+            """, (chatbot_id, current_user["id"]))
+            
+            result = cursor.fetchone()
+            if not result:
+                raise HTTPException(status_code=404, detail="Chatbot not found")
+            
+            if result[1] != 'active':
+                raise HTTPException(status_code=400, detail="Chatbot is not ready yet")
+            
+            return {
+                "embed_code": result[0],
+                "instructions": "Copy and paste this code into your website's HTML where you want the chatbot to appear."
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/chatbots/{chatbot_id}/widget-settings")
+async def update_widget_settings(
     chatbot_id: int,
-    chatbot_update: ChatbotUpdate,
+    settings: WidgetSettings,
     current_user: dict = Depends(get_current_user)
 ):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        # Verify ownership
-        cursor.execute("SELECT id FROM chatbots WHERE id = ? AND user_id = ?", (chatbot_id, current_user["id"]))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Chatbot not found")
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-        # Build dynamic update query
-        update_fields = []
-        values = []
-        
-        if chatbot_update.name is not None:
-            update_fields.append("name = ?")
-            values.append(chatbot_update.name)
-        
-        if chatbot_update.brand_voice is not None:
-            update_fields.append("brand_voice = ?")
-            values.append(chatbot_update.brand_voice)
-        
-        if chatbot_update.max_pages is not None:
-            update_fields.append("max_pages = ?")
-            values.append(chatbot_update.max_pages)
-        
-        if not update_fields:
-            raise HTTPException(status_code=400, detail="No fields to update")
-        
-        update_fields.append("updated_at = CURRENT_TIMESTAMP")
-        values.append(chatbot_id)
-        
-        query = f"UPDATE chatbots SET {', '.join(update_fields)} WHERE id = ?"
-        cursor.execute(query, values)
-        conn.commit()
-        
-        logger.info(f"Chatbot {chatbot_id} updated by user {current_user['id']}")
-        
-        return {"message": "Chatbot updated successfully"}
-    finally:
-        conn.close()
+        try:
+            cursor.execute("SELECT id FROM chatbots WHERE id = ? AND user_id = ?", (chatbot_id, current_user["id"]))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Chatbot not found")
+            
+            cursor.execute("""
+                UPDATE chatbots 
+                SET widget_settings = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (json.dumps(settings.dict()), chatbot_id))
+            
+            conn.commit()
+            
+            return {"message": "Widget settings updated successfully"}
+        except Exception as e:
+            conn.rollback()
+            raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/chatbots/{chatbot_id}")
-async def delete_chatbot(chatbot_id: int, current_user: dict = Depends(get_current_user)):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        # Verify ownership
-        cursor.execute("SELECT id FROM chatbots WHERE id = ? AND user_id = ?", (chatbot_id, current_user["id"]))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Chatbot not found")
-        
-        # Delete related data (cascading delete)
-        cursor.execute("DELETE FROM website_content WHERE chatbot_id = ?", (chatbot_id,))
-        cursor.execute("DELETE FROM conversations WHERE chatbot_id = ?", (chatbot_id,))
-        cursor.execute("DELETE FROM analytics WHERE chatbot_id = ?", (chatbot_id,))
-        cursor.execute("DELETE FROM chatbots WHERE id = ?", (chatbot_id,))
-        
-        conn.commit()
-        
-        logger.info(f"Chatbot {chatbot_id} deleted by user {current_user['id']}")
-        
-        return {"message": "Chatbot deleted successfully"}
-    finally:
-        conn.close()
-
-@app.post("/chatbots/{chatbot_id}/regenerate")
-async def regenerate_chatbot(
+async def delete_chatbot(
     chatbot_id: int,
-    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user)
 ):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        # Get chatbot details
-        cursor.execute("""
-            SELECT name, website_url, sitemap_url, max_pages, brand_voice
-            FROM chatbots 
-            WHERE id = ? AND user_id = ?
-        """, (chatbot_id, current_user["id"]))
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-        chatbot = cursor.fetchone()
-        if not chatbot:
-            raise HTTPException(status_code=404, detail="Chatbot not found")
-        
-        # Clear existing content
-        cursor.execute("DELETE FROM website_content WHERE chatbot_id = ?", (chatbot_id,))
-        
-        # Update status to processing
-        cursor.execute("""
-            UPDATE chatbots 
-            SET status = 'processing', updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (chatbot_id,))
-        
-        conn.commit()
-        
-        # Create chatbot data for reprocessing
-        chatbot_data = ChatbotCreate(
-            name=chatbot[0],
-            website_url=chatbot[1],
-            sitemap_url=chatbot[2],
-            max_pages=chatbot[3],
-            brand_voice=chatbot[4]
-        )
-        
-        # Start background reprocessing
-        background_tasks.add_task(process_website, chatbot_id, chatbot_data)
-        
-        logger.info(f"Chatbot {chatbot_id} regeneration started by user {current_user['id']}")
-        
-        return {
-            "message": "Chatbot regeneration started. Website re-scraping in progress...",
-            "status": "processing"
-        }
-    except Exception as e:
-        logger.error(f"Error regenerating chatbot {chatbot_id}: {e}")
-        
-        # Update status to failed
-        cursor.execute("""
-            UPDATE chatbots 
-            SET status = 'failed', updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (chatbot_id,))
-        conn.commit()
-        
-        raise HTTPException(status_code=500, detail="Error regenerating chatbot")
-    finally:
-        conn.close()
+        try:
+            cursor.execute("SELECT id FROM chatbots WHERE id = ? AND user_id = ?", (chatbot_id, current_user["id"]))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Chatbot not found or you do not have permission to delete it.")
 
-# Chat endpoints
-@app.post("/chat/{chatbot_id}")
-async def chat_with_bot(
-    chatbot_id: int,
+            cursor.execute("DELETE FROM website_content WHERE chatbot_id = ?", (chatbot_id,))
+            cursor.execute("DELETE FROM conversations WHERE chatbot_id = ?", (chatbot_id,))
+            cursor.execute("DELETE FROM chatbots WHERE id = ?", (chatbot_id,))
+            
+            conn.commit()
+            
+            logger.info(f"Chatbot {chatbot_id} and all associated data deleted successfully by user {current_user['id']}.")
+            
+            return {"message": "Chatbot and its data deleted successfully"}
+        except HTTPException:
+            conn.rollback()
+            raise
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error deleting chatbot {chatbot_id}: {e}")
+            raise HTTPException(status_code=500, detail="An internal error occurred during deletion.")
+
+
+@app.post("/api/chat/{chatbot_id}")
+async def public_api_chat(
+    chatbot_id: int, 
     chat_data: ChatMessage,
-    current_user: dict = Depends(get_current_user)
+    request: Request,
+    api_key: str = None
 ):
     start_time = datetime.now()
     
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        # Verify chatbot ownership and get system prompt
-        cursor.execute("""
-            SELECT system_prompt, status FROM chatbots 
-            WHERE id = ? AND user_id = ?
-        """, (chatbot_id, current_user["id"]))
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-        chatbot = cursor.fetchone()
-        if not chatbot:
-            raise HTTPException(status_code=404, detail="Chatbot not found")
-        
-        if chatbot[1] != "active":
-            raise HTTPException(status_code=400, detail=f"Chatbot is not ready (status: {chatbot[1]})")
-        
-        system_prompt = chatbot[0]
-        
-        # Get recent conversation history
-        cursor.execute("""
-            SELECT user_message, bot_response FROM conversations 
-            WHERE chatbot_id = ? AND session_id = ? 
-            ORDER BY created_at DESC LIMIT 10
-        """, (chatbot_id, chat_data.session_id))
-        
-        conversation_history = [
-            {"user_message": row[0], "bot_response": row[1]} 
-            for row in cursor.fetchall()
-        ]
-        conversation_history.reverse()  # Chronological order
-        
-        # Generate AI response
-        bot_response = await generate_ai_response(
-            chat_data.message, 
-            system_prompt, 
-            conversation_history
-        )
-        
-        # Calculate response time
-        response_time = (datetime.now() - start_time).total_seconds() * 1000
-        
-        # Save conversation
-        cursor.execute("""
-            INSERT INTO conversations (chatbot_id, session_id, user_message, bot_response, response_time_ms)
-            VALUES (?, ?, ?, ?, ?)
-        """, (chatbot_id, chat_data.session_id, chat_data.message, bot_response, int(response_time)))
-        
-        # Log analytics event
-        cursor.execute("""
-            INSERT INTO analytics (chatbot_id, event_type, event_data)
-            VALUES (?, ?, ?)
-        """, (chatbot_id, "message_sent", json.dumps({
-            "session_id": chat_data.session_id,
-            "message_length": len(chat_data.message),
-            "response_time_ms": int(response_time),
-            "user_id": current_user["id"]
-        })))
-        
-        conn.commit()
-        
-        return {
-            "response": bot_response,
-            "session_id": chat_data.session_id,
-            "response_time_ms": int(response_time)
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in chat for chatbot {chatbot_id}: {e}")
-        raise HTTPException(status_code=500, detail="Error generating response")
-    finally:
-        conn.close()
+        try:
+            cursor.execute("""
+                SELECT c.system_prompt, c.status, c.api_key, c.user_id, c.monthly_conversations,
+                       u.plan FROM chatbots c
+                JOIN users u ON c.user_id = u.id
+                WHERE c.id = ? AND c.is_active = 1
+            """, (chatbot_id,))
+            
+            result = cursor.fetchone()
+            if not result or result[1] != "active":
+                raise HTTPException(status_code=404, detail="Chatbot not found or not active")
+            
+            system_prompt, status, stored_api_key, user_id, monthly_conversations, user_plan = result
+            
+            if api_key != stored_api_key:
+                raise HTTPException(status_code=401, detail="Invalid API key")
+            
+            plan_limits = SUBSCRIPTION_PLANS.get(user_plan, SUBSCRIPTION_PLANS["free"])
+            if (plan_limits["max_conversations_per_month"] != -1 and 
+                monthly_conversations >= plan_limits["max_conversations_per_month"]):
+                raise HTTPException(status_code=429, detail="Monthly conversation limit exceeded")
+            
+            cursor.execute("""
+                SELECT user_message, bot_response FROM conversations 
+                WHERE chatbot_id = ? AND session_id = ? 
+                ORDER BY created_at DESC LIMIT 10
+            """, (chatbot_id, chat_data.session_id))
+            
+            conversation_history = [
+                {"user_message": row[0], "bot_response": row[1]} 
+                for row in cursor.fetchall()
+            ]
+            conversation_history.reverse()
+            
+            bot_response = await generate_ai_response(
+                chat_data.message, 
+                system_prompt, 
+                conversation_history
+            )
+            
+            response_time = (datetime.now() - start_time).total_seconds() * 1000
+            
+            client_ip = request.client.host
+            user_agent = request.headers.get("user-agent", "")
+            
+            cursor.execute("""
+                INSERT INTO conversations (chatbot_id, session_id, user_message, bot_response, 
+                                            response_time_ms, user_ip, user_agent)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (chatbot_id, chat_data.session_id, chat_data.message, bot_response, 
+                  int(response_time), client_ip, user_agent))
+            
+            new_monthly_count = update_conversation_count(chatbot_id, conn)
+            
+            cursor.execute("""
+                INSERT INTO analytics (chatbot_id, event_type, event_data)
+                VALUES (?, ?, ?)
+            """, (chatbot_id, "api_conversation", json.dumps({
+                "session_id": chat_data.session_id,
+                "message_length": len(chat_data.message),
+                "response_time_ms": int(response_time),
+                "user_ip": client_ip,
+                "monthly_count": new_monthly_count
+            })))
+            
+            conn.commit()
+            
+            return {
+                "response": bot_response,
+                "session_id": chat_data.session_id,
+                "response_time_ms": int(response_time)
+            }
+        except HTTPException:
+            conn.rollback()
+            raise
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error in API chat for chatbot {chatbot_id}: {e}")
+            raise HTTPException(status_code=500, detail="Error generating response")
 
-@app.post("/public/chat/{chatbot_id}")
-async def public_chat(chatbot_id: int, chat_data: ChatMessage):
-    """Public endpoint for chatbot usage without authentication"""
-    start_time = datetime.now()
-    
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        # Get chatbot system prompt and verify it's active
-        cursor.execute("""
-            SELECT system_prompt, status FROM chatbots 
-            WHERE id = ? AND is_active = 1
-        """, (chatbot_id,))
-        
-        chatbot = cursor.fetchone()
-        if not chatbot or chatbot[1] != "active":
-            raise HTTPException(status_code=404, detail="Chatbot not found or not active")
-        
-        system_prompt = chatbot[0]
-        
-        # Get recent conversation history for this session
-        cursor.execute("""
-            SELECT user_message, bot_response FROM conversations 
-            WHERE chatbot_id = ? AND session_id = ? 
-            ORDER BY created_at DESC LIMIT 10
-        """, (chatbot_id, chat_data.session_id))
-        
-        conversation_history = [
-            {"user_message": row[0], "bot_response": row[1]} 
-            for row in cursor.fetchall()
-        ]
-        conversation_history.reverse()
-        
-        # Generate AI response
-        bot_response = await generate_ai_response(
-            chat_data.message, 
-            system_prompt, 
-            conversation_history
-        )
-        
-        # Calculate response time
-        response_time = (datetime.now() - start_time).total_seconds() * 1000
-        
-        # Save conversation
-        cursor.execute("""
-            INSERT INTO conversations (chatbot_id, session_id, user_message, bot_response, response_time_ms)
-            VALUES (?, ?, ?, ?, ?)
-        """, (chatbot_id, chat_data.session_id, chat_data.message, bot_response, int(response_time)))
-        
-        # Log analytics event
-        cursor.execute("""
-            INSERT INTO analytics (chatbot_id, event_type, event_data)
-            VALUES (?, ?, ?)
-        """, (chatbot_id, "public_message_sent", json.dumps({
-            "session_id": chat_data.session_id,
-            "message_length": len(chat_data.message),
-            "response_time_ms": int(response_time)
-        })))
-        
-        conn.commit()
-        
-        return {
-            "response": bot_response,
-            "session_id": chat_data.session_id,
-            "response_time_ms": int(response_time)
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in public chat for chatbot {chatbot_id}: {e}")
-        raise HTTPException(status_code=500, detail="Error generating response")
-    finally:
-        conn.close()
+@app.get("/widget.js", response_class=HTMLResponse)
+async def get_widget_script():
+    """Serve the chatbot widget JavaScript"""
+    some_dynamic_value = "Custom Title"
+    widget_js = f'''
+(function() {{
+    window.ChatbotWidget = {{
+        init: function(config) {{
+            var chatbotId = config.chatbotId;
+            var apiKey = config.apiKey;
+            var apiUrl = config.apiUrl;
+            
+            var widgetHtml = `
+                <div id="chatbot-widget" style="position: fixed; bottom: 20px; right: 20px; z-index: 10000;">
+                    <div id="chatbot-button" style="width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                        <svg width="24" height="24" fill="white" viewBox="0 0 24 24">
+                            <path d="M12 2C6.48 2 2 6.48 2 12c0 1.54.36 3.04.97 4.37L1 23l6.63-1.97C9.96 21.64 11.46 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm0 18c-1.21 0-2.35-.31-3.34-.85L4 20l.85-4.66C4.31 14.35 4 13.21 4 12c0-4.41 3.59-8 8-8s8 3.59 8 8-3.59 8-8 8z"/>
+                        </svg>
+                    </div>
+                    <div id="chatbot-window" style="display: none; position: absolute; bottom: 80px; right: 0; width: 350px; height: 500px; background: white; border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); flex-direction: column;">
+                        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; border-radius: 10px 10px 0 0; font-weight: bold;">
+                            Chatbot Assistant ({some_dynamic_value})
+                        </div>
+                        <div id="chat-messages" style="flex: 1; padding: 15px; overflow-y: auto; max-height: 350px;">
+                            <div style="background: #f0f0f0; padding: 10px; border-radius: 10px; margin-bottom: 10px;">
+                                Hello! How can I help you today?
+                            </div>
+                        </div>
+                        <div style="padding: 15px; border-top: 1px solid #eee;">
+                            <div style="display: flex; gap: 10px;">
+                                <input id="chat-input" type="text" placeholder="Type your message..." style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px; outline: none;">
+                                <button id="send-button" style="background: #667eea; color: white; border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer;">➤</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', widgetHtml);
+            
+            var button = document.getElementById('chatbot-button');
+            var chatWindow = document.getElementById('chatbot-window');
+            var input = document.getElementById('chat-input');
+            var sendButton = document.getElementById('send-button');
+            var messages = document.getElementById('chat-messages');
+            var sessionId = 'session-' + Date.now();
+            
+            button.onclick = function() {{
+                chatWindow.style.display = chatWindow.style.display === 'none' ? 'flex' : 'none';
+            }};
+            
+            function addMessage(message, isUser) {{
+                var messageDiv = document.createElement('div');
+                messageDiv.style.cssText = 'padding: 10px; border-radius: 10px; margin-bottom: 10px; max-width: 80%; ' + 
+                    (isUser ? 'background: #667eea; color: white; margin-left: auto; text-align: right;' : 'background: #f0f0f0;');
+                messageDiv.textContent = message;
+                messages.appendChild(messageDiv);
+                messages.scrollTop = messages.scrollHeight;
+            }}
+            
+            function sendMessage() {{
+                var message = input.value.trim();
+                if (!message) return;
+                
+                addMessage(message, true);
+                input.value = '';
+                
+                var typingDiv = document.createElement('div');
+                typingDiv.style.cssText = 'padding: 10px; border-radius: 10px; margin-bottom: 10px; background: #f0f0f0; font-style: italic;';
+                typingDiv.textContent = 'Typing...';
+                typingDiv.id = 'typing-indicator';
+                messages.appendChild(typingDiv);
+                messages.scrollTop = messages.scrollHeight;
+                
+                fetch(apiUrl + '/api/chat/' + chatbotId + '?api_key=' + apiKey, {{
+                    method: 'POST',
+                    headers: {{
+                        'Content-Type': 'application/json',
+                    }},
+                    body: JSON.stringify({{
+                        message: message,
+                        session_id: sessionId
+                    }})
+                }})
+                .then(response => response.json())
+                .then(data => {{
+                    document.getElementById('typing-indicator').remove();
+                    if (data.response) {{
+                        addMessage(data.response, false);
+                    }} else {{
+                        addMessage('Sorry, I encountered an error. Please try again.', false);
+                    }}
+                }})
+                .catch(error => {{
+                    document.getElementById('typing-indicator').remove();
+                    addMessage('Sorry, I encountered an error. Please try again.', false);
+                }});
+            }}
+            
+            sendButton.onclick = sendMessage;
+            input.onkeypress = function(e) {{
+                if (e.key === 'Enter') {{
+                    sendMessage();
+                }}
+            }};
+        }}
+    }};
+}})();
+'''
+    return widget_js
 
-@app.get("/chat/{chatbot_id}/history")
-async def get_chat_history(
-    chatbot_id: int,
-    session_id: str,
-    limit: int = 50,
-    current_user: dict = Depends(get_current_user)
-):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        # Verify chatbot ownership
-        cursor.execute("SELECT id FROM chatbots WHERE id = ? AND user_id = ?", (chatbot_id, current_user["id"]))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Chatbot not found")
-        
-        # Get conversation history
-        cursor.execute("""
-            SELECT user_message, bot_response, created_at, response_time_ms
-            FROM conversations 
-            WHERE chatbot_id = ? AND session_id = ? 
-            ORDER BY created_at DESC LIMIT ?
-        """, (chatbot_id, session_id, limit))
-        
-        conversations = []
-        for row in cursor.fetchall():
-            conversations.append({
-                "user_message": row[0],
-                "bot_response": row[1],
-                "timestamp": row[2],
-                "response_time_ms": row[3]
-            })
-        
-        conversations.reverse()  # Chronological order
-        
-        return {
-            "conversations": conversations,
-            "total": len(conversations)
-        }
-    finally:
-        conn.close()
-
-# Analytics and content endpoints
+# Analytics endpoints
 @app.get("/analytics/{chatbot_id}")
 async def get_chatbot_analytics(
     chatbot_id: int,
     days: int = 30,
     current_user: dict = Depends(get_current_user)
 ):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        # Verify chatbot ownership
-        cursor.execute("SELECT id FROM chatbots WHERE id = ? AND user_id = ?", (chatbot_id, current_user["id"]))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Chatbot not found")
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-        # Calculate date range
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
-        
-        # Get daily conversation metrics
-        cursor.execute("""
-            SELECT 
-                COUNT(*) as total_conversations,
-                COUNT(DISTINCT session_id) as unique_sessions,
-                AVG(response_time_ms) as avg_response_time,
-                DATE(created_at) as conversation_date
-            FROM conversations 
-            WHERE chatbot_id = ? AND created_at >= ? 
-            GROUP BY DATE(created_at)
-            ORDER BY conversation_date DESC
-        """, (chatbot_id, start_date.isoformat()))
-        
-        daily_stats = []
-        for row in cursor.fetchall():
-            daily_stats.append({
-                "date": row[3],
-                "total_conversations": row[0],
-                "unique_sessions": row[1],
-                "avg_response_time_ms": round(row[2], 2) if row[2] else 0
-            })
-        
-        # Get overall metrics
-        cursor.execute("""
-            SELECT 
-                COUNT(*) as total_conversations,
-                COUNT(DISTINCT session_id) as unique_sessions,
-                AVG(response_time_ms) as avg_response_time
-            FROM conversations 
-            WHERE chatbot_id = ? AND created_at >= ?
-        """, (chatbot_id, start_date.isoformat()))
-        
-        overall_stats = cursor.fetchone()
-        
-        # Get popular topics (based on message content)
-        cursor.execute("""
-            SELECT user_message, COUNT(*) as frequency
-            FROM conversations 
-            WHERE chatbot_id = ? AND created_at >= ?
-            GROUP BY LOWER(SUBSTR(user_message, 1, 50))
-            ORDER BY frequency DESC LIMIT 10
-        """, (chatbot_id, start_date.isoformat()))
-        
-        popular_topics = []
-        for row in cursor.fetchall():
-            popular_topics.append({
-                "topic": row[0][:50] + "..." if len(row[0]) > 50 else row[0],
-                "frequency": row[1]
-            })
-        
-        return {
-            "period_days": days,
-            "overall": {
-                "total_conversations": overall_stats[0],
-                "unique_sessions": overall_stats[1],
-                "avg_response_time_ms": round(overall_stats[2], 2) if overall_stats[2] else 0
-            },
-            "daily_stats": daily_stats,
-            "popular_topics": popular_topics
-        }
-    finally:
-        conn.close()
+        try:
+            cursor.execute("SELECT id FROM chatbots WHERE id = ? AND user_id = ?", (chatbot_id, current_user["id"]))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Chatbot not found")
+            
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+            
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total_conversations,
+                    COUNT(DISTINCT session_id) as unique_sessions,
+                    AVG(response_time_ms) as avg_response_time,
+                    DATE(created_at) as conversation_date
+                FROM conversations 
+                WHERE chatbot_id = ? AND created_at >= ? 
+                GROUP BY DATE(created_at)
+                ORDER BY conversation_date DESC
+            """, (chatbot_id, start_date.isoformat()))
+            
+            daily_stats = []
+            for row in cursor.fetchall():
+                daily_stats.append({
+                    "date": row[3],
+                    "total_conversations": row[0],
+                    "unique_sessions": row[1],
+                    "avg_response_time_ms": round(row[2], 2) if row[2] else 0
+                })
+            
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total_conversations,
+                    COUNT(DISTINCT session_id) as unique_sessions,
+                    AVG(response_time_ms) as avg_response_time,
+                    COUNT(DISTINCT user_ip) as unique_visitors
+                FROM conversations 
+                WHERE chatbot_id = ? AND created_at >= ?
+            """, (chatbot_id, start_date.isoformat()))
+            
+            overall_stats = cursor.fetchone()
+            
+            cursor.execute("""
+                SELECT user_message, COUNT(*) as frequency
+                FROM conversations 
+                WHERE chatbot_id = ? AND created_at >= ?
+                GROUP BY LOWER(SUBSTR(user_message, 1, 50))
+                ORDER BY frequency DESC LIMIT 10
+            """, (chatbot_id, start_date.isoformat()))
+            
+            popular_topics = []
+            for row in cursor.fetchall():
+                popular_topics.append({
+                    "topic": row[0][:50] + "..." if len(row[0]) > 50 else row[0],
+                    "frequency": row[1]
+                })
+            
+            return {
+                "period_days": days,
+                "overall": {
+                    "total_conversations": overall_stats[0],
+                    "unique_sessions": overall_stats[1],
+                    "avg_response_time_ms": round(overall_stats[2], 2) if overall_stats[2] else 0,
+                    "unique_visitors": overall_stats[3]
+                },
+                "daily_stats": daily_stats,
+                "popular_topics": popular_topics
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/chatbots/{chatbot_id}/content")
-async def get_chatbot_content(
-    chatbot_id: int,
+@app.get("/subscription/plans")
+async def get_subscription_plans():
+    """Get available subscription plans"""
+    return {
+        "plans": SUBSCRIPTION_PLANS,
+        "current_features": {
+            "free": ["1 Chatbot", "10 Pages", "100 Conversations/month", "Basic Support"],
+            "starter": ["3 Chatbots", "50 Pages", "1,000 Conversations/month", "Priority Support", "Custom Styling"],
+            "professional": ["10 Chatbots", "200 Pages", "5,000 Conversations/month", "Advanced Analytics", "API Access"],
+            "enterprise": ["Unlimited Chatbots", "1,000 Pages", "Unlimited Conversations", "White-label", "Custom Integration"]
+        }
+    }
+
+# In main.py, find the /subscription/upgrade endpoint and modify it like this:
+
+@app.post("/subscription/upgrade")
+async def upgrade_subscription(
+    plan_data: dict,
     current_user: dict = Depends(get_current_user)
 ):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
+    """Update user subscription (placeholder for payment integration)"""
+    new_plan = plan_data.get("plan")
     
-    try:
-        # Verify chatbot ownership
-        cursor.execute("SELECT id FROM chatbots WHERE id = ? AND user_id = ?", (chatbot_id, current_user["id"]))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Chatbot not found")
-        
-        # Get website content
-        cursor.execute("""
-            SELECT url, title, content, metadata, crawled_at
-            FROM website_content 
-            WHERE chatbot_id = ? 
-            ORDER BY crawled_at DESC
-        """, (chatbot_id,))
-        
-        content_pages = []
-        for row in cursor.fetchall():
-            metadata = json.loads(row[3]) if row[3] else {}
-            content_pages.append({
-                "url": row[0],
-                "title": row[1],
-                "content_preview": row[2][:200] + "..." if len(row[2]) > 200 else row[2],
-                "word_count": metadata.get("word_count", 0),
-                "crawled_at": row[4]
-            })
-        
-        return {
-            "pages": content_pages,
-            "total_pages": len(content_pages)
-        }
-    finally:
-        conn.close()
-
-# Debug endpoints (remove in production)
-@app.get("/debug/chatbot/{chatbot_id}")
-async def debug_chatbot(chatbot_id: int, current_user: dict = Depends(get_current_user)):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
+    if new_plan not in SUBSCRIPTION_PLANS:
+        raise HTTPException(status_code=400, detail="Invalid subscription plan")
     
-    try:
-        # Get chatbot details
-        cursor.execute("""
-            SELECT id, name, website_url, sitemap_url, status, system_prompt, created_at, updated_at
-            FROM chatbots 
-            WHERE id = ? AND user_id = ?
-        """, (chatbot_id, current_user["id"]))
-        
-        chatbot = cursor.fetchone()
-        if not chatbot:
-            raise HTTPException(status_code=404, detail="Chatbot not found")
-        
-        # Get scraped content count
-        cursor.execute("SELECT COUNT(*) FROM website_content WHERE chatbot_id = ?", (chatbot_id,))
-        content_count = cursor.fetchone()[0]
-        
-        # Get recent conversations
-        cursor.execute("SELECT COUNT(*) FROM conversations WHERE chatbot_id = ?", (chatbot_id,))
-        conversation_count = cursor.fetchone()[0]
-        
-        return {
-            "chatbot_id": chatbot[0],
-            "name": chatbot[1],
-            "website_url": chatbot[2],
-            "sitemap_url": chatbot[3],
-            "status": chatbot[4],
-            "has_system_prompt": bool(chatbot[5]),
-            "system_prompt_preview": chatbot[5][:200] + "..." if chatbot[5] else None,
-            "created_at": chatbot[6],
-            "updated_at": chatbot[7],
-            "scraped_pages": content_count,
-            "total_conversations": conversation_count
-        }
-    finally:
-        conn.close()
+    # Add this check to prevent downgrades that violate limits
+    new_plan_limits = SUBSCRIPTION_PLANS.get(new_plan)
+    if new_plan_limits["max_chatbots"] != -1:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM chatbots WHERE user_id = ?", (current_user["id"],))
+            current_chatbot_count = cursor.fetchone()[0]
+            if current_chatbot_count > new_plan_limits["max_chatbots"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"You currently have {current_chatbot_count} chatbots. Please delete some before downgrading to the {new_plan.capitalize()} plan which allows a maximum of {new_plan_limits['max_chatbots']}."
+                )
 
-# Error handlers
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        try:
+            subscription_expires = datetime.now() + timedelta(days=30)
+            
+            cursor.execute("""
+                UPDATE users 
+                SET plan = ?, subscription_expires = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (new_plan, subscription_expires.isoformat(), current_user["id"]))
+            
+            conn.commit()
+            
+            plan_info = SUBSCRIPTION_PLANS[new_plan]
+            email_body = f"""
+            <html>
+              <body>
+
+                <h2>Subscription Upgraded!</h2>
+
+                     <p>Your subscription has been upgraded to {plan_info['name']}.</p>
+                    <p>Your new limits:</p>
+
+                    <ul>
+
+                    <li>Chatbots: {'Unlimited' if plan_info['max_chatbots'] == -1 else plan_info['max_chatbots']}</li>
+
+                     <li>Pages per bot: {plan_info['max_pages_per_bot']}</li>
+
+                        <li>Monthly conversations: {'Unlimited' if plan_info['max_conversations_per_month'] == -1 else plan_info['max_conversations_per_month']}</li>
+
+                     </ul>
+
+                        <p>Thank you for upgrading!</p>
+
+                         </body>
+                    </html>
+            """
+            
+            send_email(current_user["email"], "Subscription Updated - Chatbot SaaS", email_body, is_html=True)
+            
+            logger.info(f"User {current_user['id']} updated plan to {new_plan}")
+            
+            return {
+                "message": f"Successfully updated to {plan_info['name']}",
+                "plan": new_plan,
+                "expires": subscription_expires.isoformat()
+            }
+        except Exception as e:
+            conn.rollback()
+            raise HTTPException(status_code=500, detail=str(e))
+        
+@app.post("/contact/send")
+async def send_contact_form(form_data: ContactForm, background_tasks: BackgroundTasks):
+    # 1) Store in DB
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO contact_messages
+                (name, email, subject, message, user_id, company_name, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'new')
+        """, (
+            form_data.name,
+            form_data.email,
+            form_data.subject,
+            form_data.message,
+            form_data.user_id,                    # may be None
+            getattr(form_data, "company_name", None)  # if provided
+        ))
+        conn.commit()
+
+    # 2) Email to support inbox
+    email_html = f"""
+    <html>
+      <body>
+        <h2>New Contact Form Submission</h2>
+        <p><b>Name:</b> {form_data.name}</p>
+        <p><b>Email:</b> {form_data.email}</p>
+        <p><b>Subject:</b> {form_data.subject}</p>
+        <p><b>Message:</b><br/>{form_data.message.replace('\n', '<br/>')}</p>
+      </body>
+    </html>
+    """
+
+    # Send in background so API returns fast
+    background_tasks.add_task(
+    send_email,
+    CONTACT_RECIPIENT,                         
+    f"Contact Form: {form_data.subject}",
+    email_html,
+    True
+    )
+
+    return {"message": "Message sent successfully"}
+
+
+@app.get("/debug/email-config")
+def debug_email_config():
+    return {
+        "FROM_EMAIL": FROM_EMAIL,
+        "CONTACT_RECIPIENT": CONTACT_RECIPIENT,
+        "SMTP_SERVER": SMTP_SERVER,
+        "SMTP_PORT": SMTP_PORT,
+        "SMTP_USERNAME": SMTP_USERNAME,
+        "has_SMTP_PASSWORD": bool(SMTP_PASSWORD),
+    }
+
+
+
+@app.get("/admin/stats")
+async def get_admin_stats(current_user: dict = Depends(get_current_user)):
+    """Get platform statistics (admin only - add proper auth in production)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("SELECT COUNT(*) FROM users")
+            total_users = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM chatbots")
+            total_chatbots = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM conversations")
+            total_conversations = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT plan, COUNT(*) FROM users GROUP BY plan")
+            users_by_plan = dict(cursor.fetchall())
+            
+            cursor.execute("""
+                SELECT DATE(created_at), COUNT(*) 
+                FROM conversations 
+                WHERE created_at >= date('now', '-7 days')
+                GROUP BY DATE(created_at)
+                ORDER BY created_at DESC
+            """)
+            recent_activity = dict(cursor.fetchall())
+            
+            return {
+                "total_users": total_users,
+                "total_chatbots": total_chatbots,
+                "total_conversations": total_conversations,
+                "users_by_plan": users_by_plan,
+                "recent_activity": recent_activity
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     logger.error(f"HTTP Exception: {exc.status_code} - {exc.detail} - URL: {request.url}")
@@ -1344,14 +1919,39 @@ async def general_exception_handler(request: Request, exc: Exception):
         content={"error": "Internal server error", "status_code": 500}
     )
 
-# CORS options handler
-@app.options("/{path:path}")
-async def options_handler(request: Request, path: str):
-    return JSONResponse(status_code=200, content={})
+@app.get("/metrics")
+async def get_metrics():
+    """Basic metrics for monitoring"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("SELECT COUNT(*) FROM chatbots WHERE status = 'active'")
+            active_chatbots = cursor.fetchone()[0]
+            
+            cursor.execute("""
+                SELECT COUNT(*) FROM conversations 
+                WHERE DATE(created_at) = DATE('now')
+            """)
+            conversations_today = cursor.fetchone()[0]
+            
+            cursor.execute("""
+                SELECT AVG(response_time_ms) FROM conversations 
+                WHERE created_at >= datetime('now', '-1 hour')
+            """)
+            avg_response_time = cursor.fetchone()[0] or 0
+            
+            return {
+                "active_chatbots": active_chatbots,
+                "conversations_today": conversations_today,
+                "avg_response_time_ms": round(avg_response_time, 2),
+                "timestamp": datetime.now().isoformat()
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
-# Run the application
 if __name__ == "__main__":
-    logger.info("Starting Universal Website Chatbot API...")
+    logger.info("Starting Enhanced Chatbot SaaS API...")
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

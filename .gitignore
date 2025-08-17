@@ -1,0 +1,30 @@
+﻿@"
+# Editors/OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Python
+venv/
+backend/venv/
+__pycache__/
+*.pyc
+
+# Databases
+*.db
+*.db-journal
+*.sqbpro
+
+# Env (secrets)
+.env
+*.env
+backend/.env
+
+# Node/builds
+node_modules/
+dist/
+build/
+
+# Logs
+*.log
+"@ | Set-Content -Encoding utf8 .gitignore
