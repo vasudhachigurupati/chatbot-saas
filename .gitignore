@@ -1,39 +1,37 @@
-﻿@"
-# Editors/OS
-.vscode/
+﻿# OS / editors
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
 
 # Python
-venv/
-backend/venv/
-__pycache__/
 *.pyc
+__pycache__/
+.venv/
+venv/
+.python-version
+.pytest_cache/
+.coverage
+coverage.xml
 
 # Databases
 *.db
 *.db-journal
+*.sqlite3
 *.sqbpro
 
-# Env (secrets)
+# Env (secrets) – keep examples committed
 .env
 *.env
+!*.env.example
 backend/.env
+frontend/.env
 
-# Node/builds
-node_modules/
-dist/
-build/
-
-# Logs
-*.log
-"@ | Set-Content -Encoding utf8 .gitignore
-# ignore secrets, envs, builds, dbs
-backend/.env
-backend/venv/
+# Node / Frontend
 frontend/node_modules/
-*.db
-*.db-journal
-*.sqbpro
-__pycache__/
+frontend/dist/
+frontend/build/
 
+# Backend build/runtime junk
+backend/__pycache__/
+backend/venv/
