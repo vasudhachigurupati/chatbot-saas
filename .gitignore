@@ -28,3 +28,12 @@ build/
 # Logs
 *.log
 "@ | Set-Content -Encoding utf8 .gitignore
+# ignore secrets, envs, builds, dbs
+backend/.env
+backend/venv/
+frontend/node_modules/
+*.db
+*.db-journal
+*.sqbpro
+__pycache__/
+
