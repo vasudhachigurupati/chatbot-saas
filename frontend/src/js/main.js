@@ -8,7 +8,7 @@ import { API_BASE_URL } from './api.js';
 window.currentUser = null;
 window.authToken = null;
 window.resendEmailValue = null;
-window.API_BASE_URL = 'http://127.0.0.1:8000'; // or 'http://localhost:8000'
+window.API_BASE_URL = 'http://127.0.0.1:8000,https://chatbot-saas-api.onrender.com'; // or 'http://localhost:8000'
 
 
 // Function to go to login from verification page

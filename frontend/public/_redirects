@@ -1,0 +1,3 @@
+/api/*     https://chatbot-saas-api.onrender.com/api/:splat    200
+/widget.js https://chatbot-saas-api.onrender.com/widget.js     200
+/health    https://chatbot-saas-api.onrender.com/health        200
