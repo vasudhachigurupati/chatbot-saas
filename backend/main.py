@@ -10,6 +10,8 @@ from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from fastapi.responses import PlainTextResponse
+
 import warnings
 import logging
 import json
@@ -24,6 +26,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import Response
+
 from fastapi import HTTPException, Depends
 from fastapi import BackgroundTasks
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -54,11 +58,9 @@ SMTP_USERNAME = config("SMTP_USERNAME", default="")
 SMTP_PASSWORD = config("SMTP_PASSWORD", default="")
 FROM_EMAIL = config("FROM_EMAIL", default=SMTP_USERNAME)
 CONTACT_RECIPIENT = config("CONTACT_RECIPIENT", default=FROM_EMAIL)
-#FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5173")
 FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5173")
+# FIXED: Remove the os.getenv call from the .env file
 BACKEND_API_BASE_URL = config("BACKEND_API_BASE_URL", default="http://localhost:8000")
-
-
 
 # Subscription Plans
 SUBSCRIPTION_PLANS = {
@@ -211,8 +213,6 @@ def init_database():
     )
     """)
 
-
-    # Contact messages table
     # Contact messages table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS contact_messages (
@@ -229,14 +229,10 @@ def init_database():
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_contact_messages_created_at ON contact_messages(created_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_contact_messages_status ON contact_messages(status)")
-
-
-
     
     conn.commit()
     conn.close()
     logger.info("Database initialized successfully")
-
 
 def get_db_connection():
     """Returns a new SQLite connection."""
@@ -252,7 +248,6 @@ def get_db():
         yield conn
     finally:
         conn.close()
-
 
 # Email utility functions
 def send_email(to_email: str, subject: str, body: str, is_html: bool = False, reply_to: str | None = None):
@@ -280,9 +275,6 @@ def send_email(to_email: str, subject: str, body: str, is_html: bool = False, re
     except Exception as e:
         logger.exception(f"Email send failed to {to_email}: {e}")
         return False
-
-
-
 
 def generate_verification_token():
     """Generate a secure verification token"""
@@ -424,8 +416,6 @@ def check_usage_limits(user: Dict, resource_type: str, current_usage: int = 0) -
     
     return True
 
-# main.py
-
 def update_conversation_count(chatbot_id: int, conn: sqlite3.Connection):
     """Update monthly conversation count and reset if needed"""
     cursor = conn.cursor()
@@ -460,7 +450,6 @@ def update_conversation_count(chatbot_id: int, conn: sqlite3.Connection):
         conn.commit()
         return monthly_count + 1
     return 0
-
 
 class WebScraper:
     def __init__(self, max_pages: int = 10):
@@ -831,7 +820,6 @@ def generate_embed_code(chatbot_id: int, api_key: str) -> str:
 </script>
 """
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Enhanced Chatbot SaaS API is starting up...")
@@ -847,14 +835,35 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-allowed = os.getenv("ALLOWED_ORIGINS", FRONTEND_URL).split(",")
+# FIXED: Better CORS configuration
+frontend_url = config("FRONTEND_URL", default="http://localhost:5173").strip()
+allowed_origins = config("ALLOWED_ORIGINS", default="").strip()
+
+if allowed_origins:
+    allowed = [o.strip() for o in allowed_origins.split(",") if o.strip()]
+else:
+    allowed = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ]
+    if frontend_url and "your-site" not in frontend_url:
+        allowed.append(frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in allowed if o.strip()],
-    allow_credentials=True,
+    allow_origins=[
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=False,
 )
+
 
 @app.middleware("http")
 async def logging_middleware(request: Request, call_next):
@@ -908,7 +917,6 @@ async def health_check():
 
 @app.post("/auth/register", response_model=dict)
 async def register(user_data: UserCreate, background_tasks: BackgroundTasks):
-    # Fix: Ensure a fresh connection for this thread to prevent "database is locked"
     with get_db() as conn:
         cursor = conn.cursor()
         
@@ -935,7 +943,6 @@ async def register(user_data: UserCreate, background_tasks: BackgroundTasks):
             user_id = cursor.lastrowid
             conn.commit()
             
-            # Start email sending as a background task
             verification_link = f"{FRONTEND_URL}/?token={verification_token}"
             email_body = f"""
             <html>
@@ -951,8 +958,6 @@ async def register(user_data: UserCreate, background_tasks: BackgroundTasks):
             </html>
             """
             
-            # Note: This is an important part of the fix. The DB transaction is already committed.
-            # The background task for sending email won't interfere with the DB lock.
             background_tasks.add_task(send_email, user_data.email, "Verify Your Email - Chatbot SaaS", email_body, is_html=True)
             
             logger.info(f"New user registered: {user_data.email} (ID: {user_id})")
@@ -970,10 +975,9 @@ async def register(user_data: UserCreate, background_tasks: BackgroundTasks):
             logger.error(f"Error during user registration: {e}")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Registration failed due to an internal error.")
 
-
 @app.post("/auth/verify-email")
 async def verify_email(verification_data: EmailVerification):
-    with get_db() as conn: # <--- CHANGED
+    with get_db() as conn:
         cursor = conn.cursor()
         
         try:
@@ -999,7 +1003,7 @@ async def verify_email(verification_data: EmailVerification):
                 WHERE id = ?
             """, (user[0],))
             
-            conn.commit() # <--- COMMIT HERE
+            conn.commit()
             
             logger.info(f"User verified: {user[1]} (ID: {user[0]})")
             
@@ -1007,7 +1011,6 @@ async def verify_email(verification_data: EmailVerification):
         except Exception as e:
             conn.rollback()
             raise e
-
 
 @app.post("/auth/resend-verification")
 async def resend_verification(email_data: dict, background_tasks: BackgroundTasks):
@@ -1106,10 +1109,7 @@ async def forgot_password(reset_data: PasswordReset, background_tasks: Backgroun
             cursor.execute("SELECT id FROM users WHERE email = ? AND is_verified = 1", (reset_data.email,))
             user = cursor.fetchone()
             
-            # This check is crucial for security. We don't want to leak whether an email exists.
             if not user:
-                # Return a generic success message even if the user doesn't exist
-                # to prevent email enumeration attacks.
                 return {"message": "If the email exists, a reset link has been sent."}
             
             reset_token = generate_verification_token()
@@ -1123,8 +1123,6 @@ async def forgot_password(reset_data: PasswordReset, background_tasks: Backgroun
             
             conn.commit()
             
-            # --- CORRECTED LINE FOR THE RESET LINK ---
-            # This uses the 'reset_token' parameter name, matching your frontend's logic.
             reset_link = f"{FRONTEND_URL}/reset-password?reset_token={reset_token}"
             
             email_body = f"""
@@ -1150,7 +1148,6 @@ async def forgot_password(reset_data: PasswordReset, background_tasks: Backgroun
         except Exception as e:
             conn.rollback()
             raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/auth/reset-password")
 async def reset_password(reset_data: PasswordResetConfirm):
@@ -1432,6 +1429,19 @@ async def delete_chatbot(
             logger.error(f"Error deleting chatbot {chatbot_id}: {e}")
             raise HTTPException(status_code=500, detail="An internal error occurred during deletion.")
 
+# FIXED: Handle OPTIONS requests properly for CORS
+@app.options("/api/chat/{chatbot_id}")
+async def handle_options(chatbot_id: int):
+    """Handle CORS preflight requests"""
+    return JSONResponse(
+        status_code=200,
+        content={"message": "OK"},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
 
 @app.post("/api/chat/{chatbot_id}")
 async def public_api_chat(
@@ -1528,7 +1538,8 @@ async def public_api_chat(
 @app.get("/widget.js", response_class=HTMLResponse)
 async def get_widget_script():
     """Serve the chatbot widget JavaScript"""
-    some_dynamic_value = "Custom Title"
+    # Assuming some dynamic values could be here, making it an f-string
+    some_dynamic_value = "Custom Title" 
     widget_js = f'''
 (function() {{
     window.ChatbotWidget = {{
@@ -1537,6 +1548,7 @@ async def get_widget_script():
             var apiKey = config.apiKey;
             var apiUrl = config.apiUrl;
             
+            // Create widget HTML - note the escaped curly braces for CSS styles
             var widgetHtml = `
                 <div id="chatbot-widget" style="position: fixed; bottom: 20px; right: 20px; z-index: 10000;">
                     <div id="chatbot-button" style="width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
@@ -1563,17 +1575,19 @@ async def get_widget_script():
                 </div>
             `;
             
+            // Add widget to page
             document.body.insertAdjacentHTML('beforeend', widgetHtml);
             
+            // Widget functionality
             var button = document.getElementById('chatbot-button');
-            var chatWindow = document.getElementById('chatbot-window');
+            var window = document.getElementById('chatbot-window');
             var input = document.getElementById('chat-input');
             var sendButton = document.getElementById('send-button');
             var messages = document.getElementById('chat-messages');
             var sessionId = 'session-' + Date.now();
             
             button.onclick = function() {{
-                chatWindow.style.display = chatWindow.style.display === 'none' ? 'flex' : 'none';
+                window.style.display = window.style.display === 'none' ? 'flex' : 'none';
             }};
             
             function addMessage(message, isUser) {{
@@ -1592,6 +1606,7 @@ async def get_widget_script():
                 addMessage(message, true);
                 input.value = '';
                 
+                // Show typing indicator
                 var typingDiv = document.createElement('div');
                 typingDiv.style.cssText = 'padding: 10px; border-radius: 10px; margin-bottom: 10px; background: #f0f0f0; font-style: italic;';
                 typingDiv.textContent = 'Typing...';
@@ -1599,6 +1614,7 @@ async def get_widget_script():
                 messages.appendChild(typingDiv);
                 messages.scrollTop = messages.scrollHeight;
                 
+                // Send to API
                 fetch(apiUrl + '/api/chat/' + chatbotId + '?api_key=' + apiKey, {{
                     method: 'POST',
                     headers: {{
@@ -1634,7 +1650,9 @@ async def get_widget_script():
     }};
 }})();
 '''
-    return widget_js
+    return Response(widget_js, media_type="application/javascript")
+
+
 
 # Analytics endpoints
 @app.get("/analytics/{chatbot_id}")
@@ -1729,8 +1747,6 @@ async def get_subscription_plans():
         }
     }
 
-# In main.py, find the /subscription/upgrade endpoint and modify it like this:
-
 @app.post("/subscription/upgrade")
 async def upgrade_subscription(
     plan_data: dict,
@@ -1742,7 +1758,6 @@ async def upgrade_subscription(
     if new_plan not in SUBSCRIPTION_PLANS:
         raise HTTPException(status_code=400, detail="Invalid subscription plan")
     
-    # Add this check to prevent downgrades that violate limits
     new_plan_limits = SUBSCRIPTION_PLANS.get(new_plan)
     if new_plan_limits["max_chatbots"] != -1:
         with get_db() as conn:
@@ -1773,26 +1788,17 @@ async def upgrade_subscription(
             email_body = f"""
             <html>
               <body>
-
                 <h2>Subscription Upgraded!</h2>
-
-                     <p>Your subscription has been upgraded to {plan_info['name']}.</p>
-                    <p>Your new limits:</p>
-
-                    <ul>
-
-                    <li>Chatbots: {'Unlimited' if plan_info['max_chatbots'] == -1 else plan_info['max_chatbots']}</li>
-
-                     <li>Pages per bot: {plan_info['max_pages_per_bot']}</li>
-
-                        <li>Monthly conversations: {'Unlimited' if plan_info['max_conversations_per_month'] == -1 else plan_info['max_conversations_per_month']}</li>
-
-                     </ul>
-
-                        <p>Thank you for upgrading!</p>
-
-                         </body>
-                    </html>
+                <p>Your subscription has been upgraded to {plan_info['name']}.</p>
+                <p>Your new limits:</p>
+                <ul>
+                <li>Chatbots: {'Unlimited' if plan_info['max_chatbots'] == -1 else plan_info['max_chatbots']}</li>
+                <li>Pages per bot: {plan_info['max_pages_per_bot']}</li>
+                <li>Monthly conversations: {'Unlimited' if plan_info['max_conversations_per_month'] == -1 else plan_info['max_conversations_per_month']}</li>
+                </ul>
+                <p>Thank you for upgrading!</p>
+                </body>
+            </html>
             """
             
             send_email(current_user["email"], "Subscription Updated - Chatbot SaaS", email_body, is_html=True)
@@ -1807,10 +1813,9 @@ async def upgrade_subscription(
         except Exception as e:
             conn.rollback()
             raise HTTPException(status_code=500, detail=str(e))
-        
+
 @app.post("/contact/send")
 async def send_contact_form(form_data: ContactForm, background_tasks: BackgroundTasks):
-    # 1) Store in DB
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -1822,12 +1827,11 @@ async def send_contact_form(form_data: ContactForm, background_tasks: Background
             form_data.email,
             form_data.subject,
             form_data.message,
-            form_data.user_id,                    # may be None
-            getattr(form_data, "company_name", None)  # if provided
+            form_data.user_id,
+            getattr(form_data, "company_name", None)
         ))
         conn.commit()
 
-    # 2) Email to support inbox
     email_html = f"""
     <html>
       <body>
@@ -1840,17 +1844,15 @@ async def send_contact_form(form_data: ContactForm, background_tasks: Background
     </html>
     """
 
-    # Send in background so API returns fast
     background_tasks.add_task(
-    send_email,
-    CONTACT_RECIPIENT,                         
-    f"Contact Form: {form_data.subject}",
-    email_html,
-    True
+        send_email,
+        CONTACT_RECIPIENT,                         
+        f"Contact Form: {form_data.subject}",
+        email_html,
+        True
     )
 
     return {"message": "Message sent successfully"}
-
 
 @app.get("/debug/email-config")
 def debug_email_config():
@@ -1862,8 +1864,6 @@ def debug_email_config():
         "SMTP_USERNAME": SMTP_USERNAME,
         "has_SMTP_PASSWORD": bool(SMTP_PASSWORD),
     }
-
-
 
 @app.get("/admin/stats")
 async def get_admin_stats(current_user: dict = Depends(get_current_user)):

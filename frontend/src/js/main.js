@@ -1,38 +1,16 @@
 import { login, register, verifyToken, logout, verifyEmail, forgotPassword, resendVerification, resetPassword, checkPasswordResetToken, showPasswordResetPage } from './auth.js';
 import { loadDashboardData, showDashboardSection, createChatbot, showEmbedCode, copyEmbedCode, deleteChatbot, viewAnalytics, upgradePlan } from './dashboard.js';
 import { showModal, closeModal, showAlert, showCustomDialog, scrollToSection, hideEmailVerificationPage, showEmailVerificationPage, selectPlan, showLandingPage, showLandingPageKeepAuth } from './ui.js';
-
+import { API_BASE_URL } from './api.js';
 
 
 // Global state variables for the entire application
 window.currentUser = null;
 window.authToken = null;
 window.resendEmailValue = null;
-window.API_BASE_URL = 'http://localhost:8000';
+window.API_BASE_URL = 'http://127.0.0.1:8000'; // or 'http://localhost:8000'
 
-// Function to show landing page
-/*export function showLandingPage() {
-    hideAllSections(); // Clear previous state first
-    console.log('Showing landing page');
-    document.getElementById('hero').classList.remove('hidden');
-    document.getElementById('main-content').classList.remove('hidden');
-    document.getElementById('auth-buttons').classList.remove('hidden');
-    document.getElementById('user-menu').classList.add('hidden');
-    
-    // Hide dashboard nav link
-    const dashboardNavItem = document.getElementById('dashboard-nav-item');
-    if (dashboardNavItem) {
-        dashboardNavItem.classList.add('hidden');
-    }
-}
 
-export function showLandingPageKeepAuth() {
-    document.getElementById('hero').classList.remove('hidden');
-    document.getElementById('main-content').classList.remove('hidden');
-    document.getElementById('verification-section').classList.remove('active');
-    document.getElementById('dashboard').classList.remove('active');
-    // We intentionally do not touch auth-buttons or user-menu here
-}*/
 // Function to go to login from verification page
 export function goToLogin() {
     hideEmailVerificationPage();
@@ -57,7 +35,7 @@ export function goToDashboard() {
 // In src/js/main.js, add the following function:
 async function submitContactForm(name, email, subject, message) {
     try {
-        const response = await fetch(`${window.API_BASE_URL}/contact/send`, {
+        const response = await fetch(`${API_BASE_URL}/contact/send`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

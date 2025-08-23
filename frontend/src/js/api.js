@@ -148,6 +148,14 @@ export async function viewAnalytics(chatbotId) {
     }
 }
 
+
+// frontend/src/js/api.js
+export const API_BASE_URL =
+  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL)
+    || (typeof window !== 'undefined' && window.API_BASE_URL)
+    || 'http://127.0.0.1:8000';
+
+
 async function displayAnalytics(data) {
     const analyticsContent = document.getElementById('analytics-content');
     
